@@ -87,7 +87,6 @@ export const FlappyBird = () => {
   const [pipes, setPipes] = useState<Pipe[]>([])
   const [score, setScore] = useState(0)
   const [cycle, setCycle] = useState(0) // Track cycles in easy mode
-  const [currentTolerance, setCurrentTolerance] = useState(24) // Current frequency tolerance
   
   // Settings
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
@@ -98,6 +97,7 @@ export const FlappyBird = () => {
   const lastNoteTime = useRef<number>(0)
   const pipeIdCounter = useRef(0)
   const gameStartTime = useRef<number>(0)
+  const currentCycleToleranceRef = useRef<number>(24) // Locked tolerance for current cycle
   
   // Default note sequence: C3,D3, E3, F3, G3, A3, B3, C4, B3, A3, G3, F3, E3, D3, C3
   const noteSequence: Note[] = useMemo(() => [
@@ -130,32 +130,29 @@ export const FlappyBird = () => {
     return settings.initialGap
   }, [difficulty, cycle])
   
-  // Update tolerance when difficulty changes (for menu selection)
+  
+  // Initialize cycle tolerance when game starts or difficulty changes
   useEffect(() => {
-    if (gameState === 'menu') {
-      if (difficulty === 'easy') {
-        setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance)
-      } else {
-        setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
-      }
+    if (difficulty === 'easy') {
+      const settings = DIFFICULTY_SETTINGS[difficulty]
+      const reduction = cycle
+      const newTolerance = settings.initialFrequencyTolerance - reduction
+      currentCycleToleranceRef.current = Math.max(settings.minFrequencyTolerance, newTolerance)
+    } else {
+      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     }
   }, [difficulty, gameState])
   
-  // Update tolerance when cycle changes (only in easy mode during gameplay)
+  // Update tolerance only when cycle actually increments
   useEffect(() => {
-    if (gameState === 'playing') {
-      if (difficulty === 'easy') {
-        const settings = DIFFICULTY_SETTINGS[difficulty]
-        // Reduce tolerance by 1Hz per completed cycle
-        const reduction = cycle
-        const newTolerance = settings.initialFrequencyTolerance - reduction
-        setCurrentTolerance(Math.max(settings.minFrequencyTolerance, newTolerance))
-      } else {
-        // For medium and hard modes, tolerance should never change
-        setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
-      }
+    if (gameState === 'playing' && difficulty === 'easy') {
+      const settings = DIFFICULTY_SETTINGS[difficulty]
+      const reduction = cycle
+      const newTolerance = settings.initialFrequencyTolerance - reduction
+      const finalTolerance = Math.max(settings.minFrequencyTolerance, newTolerance)
+      currentCycleToleranceRef.current = finalTolerance
     }
-  }, [cycle, gameState, difficulty])
+  }, [cycle]) // Only depends on cycle, not gameState or difficulty
   
   // Convert frequency to Y position on screen
   const frequencyToY = useCallback((freq: number) => {
@@ -173,9 +170,12 @@ export const FlappyBird = () => {
     // Calculate gap based on note frequency and current difficulty tolerance
     const noteFrequency = note.frequency
     
+    // Use the locked tolerance for this cycle
+    const tolerance = currentCycleToleranceRef.current
+    
     // Calculate frequency range for the gap (note frequency ± tolerance)
-    const minFreq = noteFrequency - currentTolerance
-    const maxFreq = noteFrequency + currentTolerance
+    const minFreq = noteFrequency - tolerance
+    const maxFreq = noteFrequency + tolerance
     
     // Convert frequency range to Y positions (inverted: higher freq = lower Y)
     const topOfGap = frequencyToY(maxFreq) // Higher frequency = top of gap
@@ -205,7 +205,7 @@ export const FlappyBird = () => {
     
     setCurrentNoteIndex(prev => prev + 1)
     return pipe
-  }, [currentNoteIndex, noteSequence, frequencyToY, currentTolerance, width, height, bpm])
+  }, [currentNoteIndex, noteSequence, frequencyToY, width, height, bpm])
   
   // Track pitch detection for continuous flying
   const isPitchDetectedRef = useRef<boolean>(false)
@@ -319,7 +319,7 @@ export const FlappyBird = () => {
             newScore++
             
             // Check if we completed a full cycle (in easy mode)
-            if (difficulty === 'easy' && newScore % noteSequence.length === 0) {
+            if (difficulty === 'easy' && newScore % noteSequence.length === 0 && newScore > 0) {
               cycleComplete = true
             }
           }
@@ -368,9 +368,9 @@ export const FlappyBird = () => {
     setCurrentNoteIndex(0)
     // Reset tolerance based on difficulty
     if (difficulty === 'easy') {
-      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance)
+      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance
     } else {
-      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
+      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     }
     setGameState('playing')
     const now = Date.now()
@@ -388,9 +388,9 @@ export const FlappyBird = () => {
     setCurrentNoteIndex(0)
     // Reset tolerance based on difficulty
     if (difficulty === 'easy') {
-      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance)
+      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance
     } else {
-      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
+      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     }
   }, [width, height, difficulty])
   
@@ -590,7 +590,7 @@ export const FlappyBird = () => {
           {difficulty === 'easy' && (
             <>
               <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
-              <Text style={styles.toleranceInfo}>±{currentTolerance}Hz</Text>
+              <Text style={styles.toleranceInfo}>±{currentCycleToleranceRef.current}Hz</Text>
             </>
           )}
         </View>
