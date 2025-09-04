@@ -114,16 +114,12 @@ const startMicrophoneStream = async () => {
       // Process audio data asynchronously
       (async () => {
         try {
-          // Debug: Log buffer info
-          console.log(`Audio buffer received: ${buffer.samples.length} samples, max: ${Math.max(...buffer.samples.slice(0, 10))}`);
-          
+          // Debug: Log buffer info          
           // Calculate RMS
           const rms = await DSPModule.rms(buffer.samples);
           rmsQueue.push(rms);
           if (rmsQueue.length > 10) rmsQueue.shift(); // Keep last 10 RMS values
           
-          console.log(`RMS: ${rms}, Sample Rate: ${globalMicrophoneState.sampleRate}, Buffer Size: ${audioBuffer.length}`);
-
           // Pitch detection
           const detectedPitch = await DSPModule.pitch(
             audioBuffer, 
@@ -133,8 +129,6 @@ const startMicrophoneStream = async () => {
             THRESHOLD_DEFAULT
           );
           
-          console.log(`Detected Pitch: ${detectedPitch}Hz`);
-
           // Update global pitch data
           globalMicrophoneState.pitchData = {
             pitch: detectedPitch,
@@ -159,7 +153,6 @@ const startMicrophoneStream = async () => {
     setTimeout(() => {
       try {
         globalMicrophoneState.sampleRate = MicrophoneStreamModule.getSampleRate();
-        console.log(`Sample rate initialized: ${globalMicrophoneState.sampleRate}Hz`);
       } catch (error) {
         console.error('Error getting sample rate:', error);
         globalMicrophoneState.sampleRate = 44100; // Default fallback
