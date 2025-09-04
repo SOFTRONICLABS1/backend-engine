@@ -19,6 +19,9 @@ const GRAVITY = 0.5
 const BIRD_SIZE = 20
 const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
+const NOTE_CIRCLE_RADIUS = 22 // Fixed size for note label circles
+const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
+const NOTE_TEXT_OFFSET_Y = 4 // Fixed Y offset for note text
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
@@ -84,6 +87,7 @@ export const FlappyBird = () => {
   const [pipes, setPipes] = useState<Pipe[]>([])
   const [score, setScore] = useState(0)
   const [cycle, setCycle] = useState(0) // Track cycles in easy mode
+  const [currentTolerance, setCurrentTolerance] = useState(24) // Current frequency tolerance
   
   // Settings
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
@@ -126,17 +130,32 @@ export const FlappyBird = () => {
     return settings.initialGap
   }, [difficulty, cycle])
   
-  // Calculate current frequency tolerance based on difficulty and cycle
-  const getCurrentFrequencyTolerance = useCallback(() => {
-    if (difficulty === 'easy') {
-      const settings = DIFFICULTY_SETTINGS[difficulty]
-      // Reduce tolerance by 1Hz per completed cycle
-      const reduction = cycle
-      const currentTolerance = settings.initialFrequencyTolerance - reduction
-      return Math.max(settings.minFrequencyTolerance, currentTolerance)
+  // Update tolerance when difficulty changes (for menu selection)
+  useEffect(() => {
+    if (gameState === 'menu') {
+      if (difficulty === 'easy') {
+        setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance)
+      } else {
+        setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
+      }
     }
-    return DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
-  }, [difficulty, cycle])
+  }, [difficulty, gameState])
+  
+  // Update tolerance when cycle changes (only in easy mode during gameplay)
+  useEffect(() => {
+    if (gameState === 'playing') {
+      if (difficulty === 'easy') {
+        const settings = DIFFICULTY_SETTINGS[difficulty]
+        // Reduce tolerance by 1Hz per completed cycle
+        const reduction = cycle
+        const newTolerance = settings.initialFrequencyTolerance - reduction
+        setCurrentTolerance(Math.max(settings.minFrequencyTolerance, newTolerance))
+      } else {
+        // For medium and hard modes, tolerance should never change
+        setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
+      }
+    }
+  }, [cycle, gameState, difficulty])
   
   // Convert frequency to Y position on screen
   const frequencyToY = useCallback((freq: number) => {
@@ -153,7 +172,6 @@ export const FlappyBird = () => {
     const note = noteSequence[currentNoteIndex % noteSequence.length]
     // Calculate gap based on note frequency and current difficulty tolerance
     const noteFrequency = note.frequency
-    const currentTolerance = getCurrentFrequencyTolerance()
     
     // Calculate frequency range for the gap (note frequency ± tolerance)
     const minFreq = noteFrequency - currentTolerance
@@ -187,7 +205,7 @@ export const FlappyBird = () => {
     
     setCurrentNoteIndex(prev => prev + 1)
     return pipe
-  }, [currentNoteIndex, noteSequence, frequencyToY, difficulty, width, height, bpm, getCurrentFrequencyTolerance])
+  }, [currentNoteIndex, noteSequence, frequencyToY, currentTolerance, width, height, bpm])
   
   // Track pitch detection for continuous flying
   const isPitchDetectedRef = useRef<boolean>(false)
@@ -348,11 +366,17 @@ export const FlappyBird = () => {
     setScore(0)
     setCycle(0)
     setCurrentNoteIndex(0)
+    // Reset tolerance based on difficulty
+    if (difficulty === 'easy') {
+      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance)
+    } else {
+      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
+    }
     setGameState('playing')
     const now = Date.now()
     lastNoteTime.current = now
     gameStartTime.current = now // Track when game started
-  }, [width, height])
+  }, [width, height, difficulty])
   
   // Reset game
   const resetGame = useCallback(() => {
@@ -362,7 +386,13 @@ export const FlappyBird = () => {
     setScore(0)
     setCycle(0)
     setCurrentNoteIndex(0)
-  }, [width, height])
+    // Reset tolerance based on difficulty
+    if (difficulty === 'easy') {
+      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance)
+    } else {
+      setCurrentTolerance(DIFFICULTY_SETTINGS[difficulty].frequencyTolerance)
+    }
+  }, [width, height, difficulty])
   
   // Render game canvas
   const renderGame = useMemo(() => {
@@ -395,13 +425,13 @@ export const FlappyBird = () => {
             <Circle
               cx={pipe.x + pipe.width / 2}
               cy={(pipe.topHeight + pipe.bottomY) / 2}
-              r={22}
+              r={NOTE_CIRCLE_RADIUS}
               color="rgba(0, 0, 0, 0.9)"
             />
             {/* Note label text in the gap */}
             <SkiaText
-              x={pipe.x + pipe.width / 2 - 8}
-              y={(pipe.topHeight + pipe.bottomY) / 2 + 4}
+              x={pipe.x + pipe.width / 2 + NOTE_TEXT_OFFSET_X}
+              y={(pipe.topHeight + pipe.bottomY) / 2 + NOTE_TEXT_OFFSET_Y}
               text={pipe.note.name}
               color="#FFFFFF"
               font={systemFont}
@@ -560,7 +590,7 @@ export const FlappyBird = () => {
           {difficulty === 'easy' && (
             <>
               <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
-              <Text style={styles.toleranceInfo}>±{getCurrentFrequencyTolerance()}Hz</Text>
+              <Text style={styles.toleranceInfo}>±{currentTolerance}Hz</Text>
             </>
           )}
         </View>
