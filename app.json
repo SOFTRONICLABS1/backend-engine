@@ -1,0 +1,64 @@
+{
+  "expo": {
+    "name": "tuneo",
+    "slug": "tuneo",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "scheme": "tuneo",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.donbraulio.tuneo"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#3A3A3A"
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ],
+      "package": "com.donbraulio.tuneo"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#3A3A3A",
+          "image": "./assets/splash-icon.png"
+        }
+      ],
+      "react-native-edge-to-edge",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Microphone access is needed to hear the instrument."
+        }
+      ],
+      "expo-localization",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "compileSdkVersion": 35,
+            "targetSdkVersion": 34,
+            "buildToolsVersion": "35.0.0",
+            "kotlinVersion": "1.9.25"
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2b3616ed-b94a-4443-95f9-3d96d514c5c2"
+      }
+    }
+  }
+}
