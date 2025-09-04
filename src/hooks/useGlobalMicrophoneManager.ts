@@ -215,11 +215,14 @@ export const initializeGlobalMicrophone = async () => {
       globalMicrophoneState.permissionStatus = 'granted';
       await startMicrophoneStream();
     } else {
-      globalMicrophoneState.permissionStatus = 'pending';
+      // Request microphone permission immediately when app starts
+      await requestMicrophonePermission();
     }
   } catch (error) {
     console.error('Error checking microphone permission:', error);
     globalMicrophoneState.permissionStatus = 'pending';
+    // Still try to request permission even if checking failed
+    await requestMicrophonePermission();
   }
   
   notifyPermissionListeners();

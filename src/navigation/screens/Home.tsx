@@ -53,7 +53,6 @@ export const Home = () => {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.appTitle}>Tuneo</Text>
         <Text style={styles.appSubtitle}>Musical Training & Games</Text>
       </View>
       
