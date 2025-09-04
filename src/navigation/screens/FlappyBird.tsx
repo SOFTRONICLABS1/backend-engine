@@ -23,7 +23,8 @@ const GAME_SPEED_BASE = 2
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
   easy: { 
-    frequencyTolerance: 20, // +/- 20Hz
+    initialFrequencyTolerance: 24, // +/- 24Hz at start
+    minFrequencyTolerance: 10, // +/- 10Hz minimum
     minGap: 8, // minimum gap reduction in easy mode
     initialGap: 20
   },
@@ -92,6 +93,7 @@ export const FlappyBird = () => {
   const gameLoopRef = useRef<number>()
   const lastNoteTime = useRef<number>(0)
   const pipeIdCounter = useRef(0)
+  const gameStartTime = useRef<number>(0)
   
   // Default note sequence: C3,D3, E3, F3, G3, A3, B3, C4, B3, A3, G3, F3, E3, D3, C3
   const noteSequence: Note[] = useMemo(() => [
@@ -124,6 +126,18 @@ export const FlappyBird = () => {
     return settings.initialGap
   }, [difficulty, cycle])
   
+  // Calculate current frequency tolerance based on difficulty and cycle
+  const getCurrentFrequencyTolerance = useCallback(() => {
+    if (difficulty === 'easy') {
+      const settings = DIFFICULTY_SETTINGS[difficulty]
+      // Reduce tolerance by 1Hz per completed cycle
+      const reduction = cycle
+      const currentTolerance = settings.initialFrequencyTolerance - reduction
+      return Math.max(settings.minFrequencyTolerance, currentTolerance)
+    }
+    return DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
+  }, [difficulty, cycle])
+  
   // Convert frequency to Y position on screen
   const frequencyToY = useCallback((freq: number) => {
     // Map frequency range (80Hz to 1000Hz) to screen height
@@ -137,13 +151,13 @@ export const FlappyBird = () => {
   // Create a new pipe based on current note
   const createPipe = useCallback(() => {
     const note = noteSequence[currentNoteIndex % noteSequence.length]
-    // Calculate gap based on note frequency and difficulty tolerance
-    const difficultySettings = DIFFICULTY_SETTINGS[difficulty]
+    // Calculate gap based on note frequency and current difficulty tolerance
     const noteFrequency = note.frequency
+    const currentTolerance = getCurrentFrequencyTolerance()
     
     // Calculate frequency range for the gap (note frequency ± tolerance)
-    const minFreq = noteFrequency - difficultySettings.frequencyTolerance
-    const maxFreq = noteFrequency + difficultySettings.frequencyTolerance
+    const minFreq = noteFrequency - currentTolerance
+    const maxFreq = noteFrequency + currentTolerance
     
     // Convert frequency range to Y positions (inverted: higher freq = lower Y)
     const topOfGap = frequencyToY(maxFreq) // Higher frequency = top of gap
@@ -173,7 +187,7 @@ export const FlappyBird = () => {
     
     setCurrentNoteIndex(prev => prev + 1)
     return pipe
-  }, [currentNoteIndex, noteSequence, frequencyToY, difficulty, width, height, bpm])
+  }, [currentNoteIndex, noteSequence, frequencyToY, difficulty, width, height, bpm, getCurrentFrequencyTolerance])
   
   // Track pitch detection for continuous flying
   const isPitchDetectedRef = useRef<boolean>(false)
@@ -211,6 +225,11 @@ export const FlappyBird = () => {
         let newY = prev.y
         let newVelocity = 0
         
+        // Give player 3 seconds grace period at start before gravity applies
+        const gracePeriod = 3000 // 3 seconds
+        const timeSinceStart = now - gameStartTime.current
+        const isInGracePeriod = timeSinceStart < gracePeriod
+        
         // If pitch is detected, map frequency to Y position using same function as pipes
         if (isPitchDetectedRef.current && pitch > 0) {
           // Use the same frequency-to-Y mapping as pipes for perfect alignment
@@ -220,10 +239,14 @@ export const FlappyBird = () => {
           const transitionSpeed = 0.15 // Adjust for smoother/faster transitions
           newY = prev.y + (targetY - prev.y) * transitionSpeed
           newVelocity = (newY - prev.y) // Calculate velocity based on Y change
-        } else {
-          // No pitch detected, apply gravity
+        } else if (!isInGracePeriod) {
+          // No pitch detected and grace period over, apply gravity
           newVelocity = prev.velocity + GRAVITY
           newY = prev.y + newVelocity
+        } else {
+          // In grace period, bird stays in place
+          newY = prev.y
+          newVelocity = 0
         }
         
         // Check boundaries
@@ -326,7 +349,9 @@ export const FlappyBird = () => {
     setCycle(0)
     setCurrentNoteIndex(0)
     setGameState('playing')
-    lastNoteTime.current = Date.now()
+    const now = Date.now()
+    lastNoteTime.current = now
+    gameStartTime.current = now // Track when game started
   }, [width, height])
   
   // Reset game
@@ -533,7 +558,10 @@ export const FlappyBird = () => {
         <View style={styles.scoreContainer}>
           <Text style={styles.gameScore}>Score: {score}</Text>
           {difficulty === 'easy' && (
-            <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
+            <>
+              <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
+              <Text style={styles.toleranceInfo}>±{getCurrentFrequencyTolerance()}Hz</Text>
+            </>
           )}
         </View>
         
@@ -541,18 +569,37 @@ export const FlappyBird = () => {
           <Text style={styles.currentNote}>
             Pitch Control
           </Text>
-          {pitch > 0 && (
-            <>
-              <Text style={styles.yourPitch}>
-                {pitch.toFixed(1)} Hz
-              </Text>
-              <Text style={[styles.pitchIndicator, { 
-                color: isPitchDetectedRef.current ? '#00ff88' : '#fff' 
-              }]}>
-                {isPitchDetectedRef.current ? '🎵 Pitch Control!' : '⬇️ Falling'}
-              </Text>
-            </>
-          )}
+          {(() => {
+            const timeSinceStart = Date.now() - gameStartTime.current
+            const gracePeriod = 3000
+            const isInGracePeriod = timeSinceStart < gracePeriod
+            
+            if (isInGracePeriod) {
+              const remainingTime = Math.ceil((gracePeriod - timeSinceStart) / 1000)
+              return (
+                <Text style={[styles.pitchIndicator, { color: '#ffd700' }]}>
+                  🛡️ Grace Period: {remainingTime}s
+                </Text>
+              )
+            }
+            
+            if (pitch > 0) {
+              return (
+                <>
+                  <Text style={styles.yourPitch}>
+                    {pitch.toFixed(1)} Hz
+                  </Text>
+                  <Text style={[styles.pitchIndicator, { 
+                    color: isPitchDetectedRef.current ? '#00ff88' : '#fff' 
+                  }]}>
+                    {isPitchDetectedRef.current ? '🎵 Pitch Control!' : '⬇️ Falling'}
+                  </Text>
+                </>
+              )
+            }
+            
+            return null
+          })()}
         </View>
       </View>
       
@@ -746,6 +793,11 @@ const styles = StyleSheet.create({
   cycleInfo: {
     color: '#fff',
     fontSize: 14,
+  },
+  toleranceInfo: {
+    color: '#ffd700',
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   noteInfo: {
     backgroundColor: 'rgba(0,0,0,0.7)',
