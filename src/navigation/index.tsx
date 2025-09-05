@@ -5,6 +5,7 @@ import { Home } from "./screens/Home"
 import { Settings } from "./screens/Settings"
 import { Tuneo } from "./screens/Tuneo"
 import { FlappyBird } from "./screens/FlappyBird"
+import { TestGameLauncher } from "../test/TestGameLauncher"
 import Colors from "@/Colors"
 import { CloseButton } from "@/components/CloseButton"
 import { Platform } from "react-native"
@@ -40,6 +41,12 @@ const RootStack = createNativeStackNavigator({
           ? { presentation: "fullScreenModal", headerRight: () => <CloseButton /> }
           : {}),
       }),
+    },
+    TestSDK: {
+      screen: TestGameLauncher,
+      options: {
+        headerShown: false,
+      },
     },
   },
 })

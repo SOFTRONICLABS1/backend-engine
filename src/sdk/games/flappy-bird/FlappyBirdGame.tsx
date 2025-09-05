@@ -72,7 +72,24 @@ interface Bird {
 type Difficulty = 'easy' | 'medium' | 'hard'
 type BPM = 20 | 40 | 60 | 120
 
-export const FlappyBird = () => {
+export interface FlappyBirdGameProps {
+  notes?: {
+    title: string
+    measures: {
+      notes: {
+        beat: number
+        pitch: string
+        duration: number
+      }[]
+      measure_number: number
+    }[]
+    key_signature: string
+    time_signature: string
+  }
+  onGameEnd?: (score: number) => void
+}
+
+export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd }) => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
   
@@ -107,24 +124,48 @@ export const FlappyBird = () => {
   const gameStartTime = useRef<number>(0)
   const currentToleranceRef = useRef<number>(DIFFICULTY_SETTINGS.easy.frequencyTolerance) // Tolerance for current difficulty
   
-  // Default note sequence: C3,D3, E3, F3, G3, A3, B3, C4, B3, A3, G3, F3, E3, D3, C3
-  const noteSequence: Note[] = useMemo(() => [
-    { frequency: NOTE_FREQUENCIES['C3'], duration: 800, name: 'C3' },   // 800ms
-    { frequency: NOTE_FREQUENCIES['D3'], duration: 600, name: 'D3' },   // 600ms
-    { frequency: NOTE_FREQUENCIES['E3'], duration: 1000, name: 'E3' },  // 1000ms
-    { frequency: NOTE_FREQUENCIES['F3'], duration: 750, name: 'F3' },   // 750ms
-    { frequency: NOTE_FREQUENCIES['G3'], duration: 900, name: 'G3' },   // 900ms
-    { frequency: NOTE_FREQUENCIES['A3'], duration: 500, name: 'A3' },   // 500ms
-    { frequency: NOTE_FREQUENCIES['B3'], duration: 1200, name: 'B3' },  // 1200ms
-    { frequency: NOTE_FREQUENCIES['C4'], duration: 1000, name: 'C4' },  // 1000ms
-    { frequency: NOTE_FREQUENCIES['B3'], duration: 700, name: 'B3' },   // 700ms
-    { frequency: NOTE_FREQUENCIES['A3'], duration: 800, name: 'A3' },   // 800ms
-    { frequency: NOTE_FREQUENCIES['G3'], duration: 600, name: 'G3' },   // 600ms
-    { frequency: NOTE_FREQUENCIES['F3'], duration: 1100, name: 'F3' },  // 1100ms
-    { frequency: NOTE_FREQUENCIES['E3'], duration: 900, name: 'E3' },   // 900ms
-    { frequency: NOTE_FREQUENCIES['D3'], duration: 750, name: 'D3' },   // 750ms
-    { frequency: NOTE_FREQUENCIES['C3'], duration: 1000, name: 'C3' },  // 1000ms
-  ], [])
+  // Process notes from payload or use default sequence
+  const noteSequence: Note[] = useMemo(() => {
+    if (notes && notes.measures.length > 0) {
+      // Convert payload notes to game notes
+      const gameNotes: Note[] = []
+      notes.measures.forEach(measure => {
+        measure.notes.forEach(note => {
+          // Convert pitch string to frequency
+          const frequency = NOTE_FREQUENCIES[note.pitch as keyof typeof NOTE_FREQUENCIES]
+          if (frequency) {
+            gameNotes.push({
+              frequency,
+              duration: note.duration,
+              name: note.pitch
+            })
+          }
+        })
+      })
+      return gameNotes.length > 0 ? gameNotes : getDefaultNotes()
+    }
+    return getDefaultNotes()
+  }, [notes])
+
+  function getDefaultNotes(): Note[] {
+    return [
+      { frequency: NOTE_FREQUENCIES['C3'], duration: 800, name: 'C3' },
+      { frequency: NOTE_FREQUENCIES['D3'], duration: 600, name: 'D3' },
+      { frequency: NOTE_FREQUENCIES['E3'], duration: 1000, name: 'E3' },
+      { frequency: NOTE_FREQUENCIES['F3'], duration: 750, name: 'F3' },
+      { frequency: NOTE_FREQUENCIES['G3'], duration: 900, name: 'G3' },
+      { frequency: NOTE_FREQUENCIES['A3'], duration: 500, name: 'A3' },
+      { frequency: NOTE_FREQUENCIES['B3'], duration: 1200, name: 'B3' },
+      { frequency: NOTE_FREQUENCIES['C4'], duration: 1000, name: 'C4' },
+      { frequency: NOTE_FREQUENCIES['B3'], duration: 700, name: 'B3' },
+      { frequency: NOTE_FREQUENCIES['A3'], duration: 800, name: 'A3' },
+      { frequency: NOTE_FREQUENCIES['G3'], duration: 600, name: 'G3' },
+      { frequency: NOTE_FREQUENCIES['F3'], duration: 1100, name: 'F3' },
+      { frequency: NOTE_FREQUENCIES['E3'], duration: 900, name: 'E3' },
+      { frequency: NOTE_FREQUENCIES['D3'], duration: 750, name: 'D3' },
+      { frequency: NOTE_FREQUENCIES['C3'], duration: 1000, name: 'C3' },
+    ]
+  }
   
   const [currentNoteIndex, setCurrentNoteIndex] = useState(0)
   
@@ -231,6 +272,15 @@ export const FlappyBird = () => {
       }
     }
   }, [pitch, isActive, gameState])
+
+  // Handle game end callback
+  const handleGameEnd = useCallback(() => {
+    setGameState('gameOver')
+    // Defer the callback to avoid setState during render
+    if (onGameEnd) {
+      setTimeout(() => onGameEnd(score), 0)
+    }
+  }, [score, onGameEnd])
   
   // Game loop
   useEffect(() => {
@@ -272,7 +322,7 @@ export const FlappyBird = () => {
         
         // Check boundaries
         if (newY < 0 || newY > height - BIRD_SIZE) {
-          setGameState('gameOver')
+          handleGameEnd()
           return prev
         }
         
@@ -333,7 +383,7 @@ export const FlappyBird = () => {
             bird.x < pipe.x + pipe.width &&
             (bird.y < pipe.topHeight || bird.y + BIRD_SIZE > pipe.bottomY)
           ) {
-            setGameState('gameOver')
+            handleGameEnd()
           }
           
           return pipe
@@ -360,7 +410,7 @@ export const FlappyBird = () => {
         cancelAnimationFrame(gameLoopRef.current)
       }
     }
-  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY])
+  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd])
   
   // Start game
   const startGame = useCallback(() => {
@@ -491,6 +541,16 @@ export const FlappyBird = () => {
         <View style={styles.menuContainer}>
           <Text style={styles.title}>Pitch Bird</Text>
           <Text style={styles.subtitle}>Change your voice pitch to move the bird up and down!</Text>
+          
+          {/* Display song title if provided */}
+          {notes?.title && (
+            <View style={styles.songContainer}>
+              <Text style={styles.songTitle}>♪ {notes.title}</Text>
+              <Text style={styles.songInfo}>
+                {notes.key_signature} • {notes.time_signature}
+              </Text>
+            </View>
+          )}
           
           {/* Microphone Status */}
           <View style={[styles.statusContainer, { 
@@ -696,6 +756,23 @@ const styles = StyleSheet.create({
     color: '#34495e',
     textAlign: 'center',
     marginBottom: 40,
+  },
+  songContainer: {
+    backgroundColor: 'rgba(52, 73, 94, 0.1)',
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  songTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+    marginBottom: 5,
+  },
+  songInfo: {
+    fontSize: 14,
+    color: '#7f8c8d',
   },
   settingsContainer: {
     marginBottom: 40,

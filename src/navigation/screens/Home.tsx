@@ -36,6 +36,15 @@ export const Home = () => {
       colors: ['#4facfe', '#00f2fe'],
       screen: 'Settings'
     },
+    {
+      id: 'testsdk',
+      title: 'Test SDK',
+      subtitle: 'Mobile SDK testing suite',
+      icon: 'test-tube' as const,
+      iconFamily: 'MaterialCommunityIcons',
+      colors: ['#8E2DE2', '#4A00E0'],
+      screen: 'TestSDK'
+    },
   ]
   
   const renderIcon = (item: typeof menuItems[0]) => {
