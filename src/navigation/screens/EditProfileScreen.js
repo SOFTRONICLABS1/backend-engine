@@ -366,7 +366,7 @@ export default function EditProfileScreen({ navigation, route }) {
             style={styles.backButton}
             onPress={() => navigation.goBack()}
           >
-            <IconSymbol name="arrow.left" size={24} color={theme.text} />
+            <IconSymbol name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.text }]}>Edit Profile</Text>
           <View style={{ width: 40 }} />

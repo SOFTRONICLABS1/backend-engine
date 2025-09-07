@@ -162,7 +162,7 @@ export default function SettingsScreen({ navigation }) {
       {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <IconSymbol name="arrow.left" size={24} color={theme.text} />
+          <IconSymbol name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Settings</Text>
         <View style={{ width: 40 }} />

@@ -131,7 +131,7 @@ export default function MusicCreatorProfile({
             style={styles.backButton}
             onPress={handleBackPress}
           >
-            <IconSymbol name="arrow.left" size={24} color={theme.text} />
+            <IconSymbol name="arrow-back" size={24} color={theme.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: theme.text }]}>Profile</Text>
           <View style={{ width: 40 }} />

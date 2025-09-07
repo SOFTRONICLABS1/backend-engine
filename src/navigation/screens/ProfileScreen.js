@@ -370,7 +370,7 @@ export default function ProfileScreen({ navigation }) {
             style={styles.menuButton}
             onPress={() => setShowMenu(true)}
           >
-            <IconSymbol name="line.horizontal.3" size={24} color={theme.text} />
+            <IconSymbol name="menu" size={24} color={theme.text} />
           </TouchableOpacity>
         </View>
 

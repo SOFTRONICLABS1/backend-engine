@@ -19,9 +19,9 @@ export default function AuthScreen() {
       const hasUsername = user && user.username && user.username !== null;
       
       if (isNewUser === false && hasUsername) {
-        // Existing user with complete profile - go back to home
-        console.log('✅ User authenticated with complete profile - navigating to Home');
-        navigation.navigate('Home');
+        // Existing user with complete profile - go to main music app
+        console.log('✅ User authenticated with complete profile - navigating to Tabs');
+        navigation.navigate('Tabs');
         return;
       } else {
         // New user or user without username - go to Welcome page

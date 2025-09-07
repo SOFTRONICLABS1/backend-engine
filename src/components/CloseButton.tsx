@@ -8,7 +8,7 @@ export const CloseButton = () => {
   const navigation = useNavigation()
   const t = useTranslation()
   return (
-    <HeaderButton onPress={navigation.goBack}>
+    <HeaderButton onPress={() => navigation.goBack()}>
       <Text style={{ color: Colors.primary }}>{t("close")}</Text>
     </HeaderButton>
   )

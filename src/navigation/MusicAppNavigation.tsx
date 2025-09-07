@@ -49,6 +49,11 @@ export function MusicAppNavigation() {
   const [currentScreen, setCurrentScreen] = useState('backend_engine'); // Temporary: skip splash for debugging
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
 
+  // Log screen state changes
+  useEffect(() => {
+    console.log('🎯 Screen state changed to:', currentScreen);
+  }, [currentScreen]);
+
   useEffect(() => {
     // Configure Google Sign In
     GoogleSignin.configure({
@@ -61,6 +66,9 @@ export function MusicAppNavigation() {
 
     // Firebase token service will be loaded on-demand during sign-in
     console.log('🔥 Firebase token service ready (on-demand loading)');
+    
+    // Check authentication status on component mount
+    checkAuthStatus();
   }, []);
 
   // Check for existing authentication token
@@ -82,6 +90,7 @@ export function MusicAppNavigation() {
         if (user.username && user.username !== null) {
           // User is authenticated and has complete profile - go to main app
           console.log('✅ User authenticated with complete profile - navigating to Music App');
+          console.log('🔄 Setting currentScreen to: authenticated');
           console.log('=================== Auth Check Completed - Authenticated ===================');
           setCurrentScreen('authenticated');
           return;

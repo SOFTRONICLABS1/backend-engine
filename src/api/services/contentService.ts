@@ -150,6 +150,51 @@ class ContentService {
       throw error;
     }
   }
+
+  /**
+   * Get user's content (posts)
+   * @param {number} page - Page number
+   * @param {number} limit - Items per page
+   * @returns {Promise} User's content
+   */
+  async getMyContent(page: number = 1, limit: number = 20) {
+    try {
+      console.log('=================== Fetching My Content ===================');
+      
+      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.LIST}?page=${page}&limit=${limit}&user=me`);
+      
+      console.log('✅ My content fetched successfully');
+      console.log('=================== My Content Fetched ===================');
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Failed to fetch my content:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get public content feed
+   * @param {number} page - Page number
+   * @param {number} limit - Items per page
+   * @returns {Promise} Public content
+   */
+  async getPublicContent(page: number = 1, limit: number = 20) {
+    try {
+      console.log('=================== Fetching Public Content ===================');
+      
+      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.LIST}?page=${page}&limit=${limit}&visibility=public`);
+      
+      console.log('✅ Public content fetched successfully');
+      console.log('=================== Public Content Fetched ===================');
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('Failed to fetch public content:', error);
+      console.log('===== Error fetching public content:', error, '=====');
+      throw error;
+    }
+  }
 }
 
 export default new ContentService();

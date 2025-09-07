@@ -10,6 +10,12 @@ import AuthScreen from "./screens/AuthScreen"
 import WelcomeUserScreen from "./screens/WelcomeUserScreen"
 import UsernamePickerScreen from "./screens/UsernamePickerScreen" 
 import UserProfileScreen from "./screens/UserProfileScreen"
+import TabNavigator from "./TabNavigator"
+import MusicHomeScreen from "./screens/MusicHomeScreen"
+import ExploreScreen from "./screens/ExploreScreen"
+import ProfileScreen from "./screens/ProfileScreen"
+import GamesScreen from "./screens/GamesScreen"
+import EditProfileScreen from "./screens/EditProfileScreen"
 import Colors from "@/Colors"
 import { CloseButton } from "@/components/CloseButton"
 import { Platform } from "react-native"
@@ -72,6 +78,42 @@ const RootStack = createNativeStackNavigator({
     },
     UserProfile: {
       screen: UserProfileScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    Tabs: {
+      screen: TabNavigator,
+      options: {
+        headerShown: false,
+      },
+    },
+    MusicHome: {
+      screen: MusicHomeScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    Explore: {
+      screen: ExploreScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    Profile: {
+      screen: ProfileScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    Games: {
+      screen: GamesScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    EditProfile: {
+      screen: EditProfileScreen,
       options: {
         headerShown: false,
       },

@@ -119,7 +119,7 @@ export default function PhoneVerificationScreen({ navigation, route }) {
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <IconSymbol name="arrow.left" size={24} color={theme.primary} />
+            <IconSymbol name="arrow-back" size={24} color={theme.primary} />
           </TouchableOpacity>
         </View>
         
