@@ -3,12 +3,23 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, useWindowDimensio
 import { useNavigation } from "@react-navigation/native"
 import { MaterialCommunityIcons, Ionicons, FontAwesome5 } from "@expo/vector-icons"
 import { LinearGradient } from "expo-linear-gradient"
+import { useAuth } from "../../context/AuthContext"
 
 export const Home = () => {
   const navigation = useNavigation()
   const { width } = useWindowDimensions()
+  const { isAuthenticated, user, logout } = useAuth()
   
   const menuItems = [
+    {
+      id: 'music-app',
+      title: 'Music App',
+      subtitle: 'Social music learning platform',
+      icon: 'musical-note' as const,
+      iconFamily: 'Ionicons',
+      colors: ['#FF6B6B', '#4ECDC4'],
+      screen: 'MusicAuth'
+    },
     {
       id: 'tuner',
       title: 'Tuner',
@@ -63,6 +74,36 @@ export const Home = () => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.appSubtitle}>Musical Training & Games</Text>
+        
+        {/* Authentication Status */}
+        {isAuthenticated && user ? (
+          <View style={styles.authStatus}>
+            <View style={styles.userInfo}>
+              <Text style={styles.welcomeText}>Welcome, {user.name}!</Text>
+              <Text style={styles.emailText}>{user.email}</Text>
+            </View>
+            <TouchableOpacity 
+              style={styles.logoutButton} 
+              onPress={logout}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="log-out-outline" size={20} color="#ff6b6b" />
+              <Text style={styles.logoutText}>Logout</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.authStatus}>
+            <Text style={styles.notAuthText}>Not authenticated</Text>
+            <TouchableOpacity 
+              style={styles.loginButton} 
+              onPress={() => navigation.navigate('MusicAuth' as any)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="log-in-outline" size={20} color="#4ECDC4" />
+              <Text style={styles.loginText}>Sign In</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
       
       {/* Menu Items */}
@@ -153,6 +194,66 @@ const styles = StyleSheet.create({
   appSubtitle: {
     fontSize: 16,
     color: '#888',
+    marginBottom: 15,
+  },
+  authStatus: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#2a2a2a',
+    borderRadius: 12,
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  welcomeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  emailText: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
+  },
+  notAuthText: {
+    fontSize: 14,
+    color: '#888',
+    flex: 1,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 107, 107, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ff6b6b',
+  },
+  logoutText: {
+    fontSize: 12,
+    color: '#ff6b6b',
+    marginLeft: 6,
+    fontWeight: '600',
+  },
+  loginButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4ECDC4',
+  },
+  loginText: {
+    fontSize: 12,
+    color: '#4ECDC4',
+    marginLeft: 6,
+    fontWeight: '600',
   },
   scrollView: {
     flex: 1,

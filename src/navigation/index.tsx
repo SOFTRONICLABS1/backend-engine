@@ -6,6 +6,10 @@ import { Settings } from "./screens/Settings"
 import { Tuneo } from "./screens/Tuneo"
 import { FlappyBird } from "./screens/FlappyBird"
 import { TestGameLauncher } from "../test/TestGameLauncher"
+import AuthScreen from "./screens/AuthScreen"
+import WelcomeUserScreen from "./screens/WelcomeUserScreen"
+import UsernamePickerScreen from "./screens/UsernamePickerScreen" 
+import UserProfileScreen from "./screens/UserProfileScreen"
 import Colors from "@/Colors"
 import { CloseButton } from "@/components/CloseButton"
 import { Platform } from "react-native"
@@ -44,6 +48,30 @@ const RootStack = createNativeStackNavigator({
     },
     TestSDK: {
       screen: TestGameLauncher,
+      options: {
+        headerShown: false,
+      },
+    },
+    MusicAuth: {
+      screen: AuthScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    WelcomeUser: {
+      screen: WelcomeUserScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    UsernamePicker: {
+      screen: UsernamePickerScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    UserProfile: {
+      screen: UserProfileScreen,
       options: {
         headerShown: false,
       },

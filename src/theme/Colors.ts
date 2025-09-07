@@ -1,0 +1,108 @@
+// Colors copied from SimpleGameApp for exact match
+export const AppColors = {
+  primary: '#1DB954',
+  secondary: '#191414',
+  background: '#000000',
+  surface: '#121212',
+  text: '#FFFFFF',
+  textSecondary: '#B3B3B3',
+  accent: '#1ED760',
+  error: '#E22134',
+  success: '#1DB954',
+  warning: '#FFA500',
+  border: '#333333',
+  overlay: 'rgba(0, 0, 0, 0.8)',
+  card: '#181818',
+  tabBar: '#1A1A1A',
+  tabBarActive: '#1DB954',
+  tabBarInactive: '#666666',
+  placeholder: '#727272',
+  like: '#FF1744',
+  share: '#1976D2',
+  comment: '#FFFFFF',
+};
+
+export const GameColors = {
+  playButton: '#b9701dff',
+  playButtonBorder: '#1fc533ff',
+  gamePreview: '#181818',
+  gameTitle: '#FFFFFF',
+  gameDescription: '#B3B3B3',
+};
+
+export const AuthColors = {
+  signInButton: '#1DB954',
+  signUpButton: 'transparent',
+  signUpButtonBorder: '#1DB954',
+  inputBackground: '#333333',
+  inputBorder: '#555555',
+  inputText: '#FFFFFF',
+  inputPlaceholder: '#B3B3B3',
+};
+
+export const Colors = {
+  light: {
+    background: '#FAFAFA',
+    surface: '#FFFFFF',
+    surfacePlus: '#F5F5F5',
+    text: '#0A0A0A',
+    textSecondary: '#666666',
+    textTertiary: '#999999',
+    border: '#E5E5E5',
+    borderLight: '#F5F5F5',
+    primary: '#0066FF',
+    primaryLight: '#E6F0FF',
+    success: '#00C896',
+    successLight: '#E6FAF5',
+    error: '#EE3333',
+    errorLight: '#FFE6E6',
+    
+    // Component specific
+    tabBar: '#FFFFFF',
+    tabBarBorder: '#E5E5E5',
+    tabBarActive: '#0066FF',
+    tabBarInactive: '#999999',
+    card: '#FFFFFF',
+    cardBorder: '#E5E5E5',
+    input: '#FFFFFF',
+    inputBorder: '#E5E5E5',
+    inputFocus: '#0066FF',
+    badge: '#F5F5F5',
+    badgeText: '#666666',
+    modal: '#FFFFFF',
+    overlay: 'rgba(0, 0, 0, 0.5)',
+  },
+  dark: {
+    background: '#0A0A0A',
+    surface: '#1A1A1A',
+    surfacePlus: '#2A2A2A',
+    text: '#FFFFFF',
+    textSecondary: '#A0A0A0',
+    textTertiary: '#666666',
+    border: '#333333',
+    borderLight: '#2A2A2A',
+    primary: '#0066FF',
+    primaryLight: '#0052CC',
+    success: '#00C896',
+    successLight: '#00A67E',
+    error: '#FF4444',
+    errorLight: '#CC3333',
+    
+    // Component specific
+    tabBar: '#1A1A1A',
+    tabBarBorder: '#333333',
+    tabBarActive: '#0066FF',
+    tabBarInactive: '#666666',
+    card: '#1A1A1A',
+    cardBorder: '#333333',
+    input: '#2A2A2A',
+    inputBorder: '#333333',
+    inputFocus: '#0066FF',
+    badge: '#2A2A2A',
+    badgeText: '#A0A0A0',
+    modal: '#1A1A1A',
+    overlay: 'rgba(0, 0, 0, 0.7)',
+  },
+};
+
+export type ColorScheme = typeof Colors.light;
