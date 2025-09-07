@@ -12,15 +12,6 @@ export const Home = () => {
   
   const menuItems = [
     {
-      id: 'music-app',
-      title: 'Music App',
-      subtitle: 'Social music learning platform',
-      icon: 'musical-note' as const,
-      iconFamily: 'Ionicons',
-      colors: ['#FF6B6B', '#4ECDC4'],
-      screen: 'MusicAuth'
-    },
-    {
       id: 'tuner',
       title: 'Tuner',
       subtitle: 'Professional instrument tuning',
@@ -75,7 +66,7 @@ export const Home = () => {
       <View style={styles.header}>
         <Text style={styles.appSubtitle}>Musical Training & Games</Text>
         
-        {/* Authentication Status */}
+        {/* Authentication Status - User is already authenticated to access this section */}
         {isAuthenticated && user ? (
           <View style={styles.authStatus}>
             <View style={styles.userInfo}>
@@ -83,27 +74,15 @@ export const Home = () => {
               <Text style={styles.emailText}>{user.email}</Text>
             </View>
             <TouchableOpacity 
-              style={styles.logoutButton} 
-              onPress={logout}
+              style={styles.backToMusicButton} 
+              onPress={() => navigation.goBack()}
               activeOpacity={0.7}
             >
-              <Ionicons name="log-out-outline" size={20} color="#ff6b6b" />
-              <Text style={styles.logoutText}>Logout</Text>
+              <Ionicons name="arrow-back-outline" size={20} color="#4ECDC4" />
+              <Text style={styles.backButtonText}>Back to Music</Text>
             </TouchableOpacity>
           </View>
-        ) : (
-          <View style={styles.authStatus}>
-            <Text style={styles.notAuthText}>Not authenticated</Text>
-            <TouchableOpacity 
-              style={styles.loginButton} 
-              onPress={() => navigation.navigate('MusicAuth' as any)}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="log-in-outline" size={20} color="#4ECDC4" />
-              <Text style={styles.loginText}>Sign In</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        ) : null}
       </View>
       
       {/* Menu Items */}
@@ -250,6 +229,22 @@ const styles = StyleSheet.create({
     borderColor: '#4ECDC4',
   },
   loginText: {
+    fontSize: 12,
+    color: '#4ECDC4',
+    marginLeft: 6,
+    fontWeight: '600',
+  },
+  backToMusicButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(78, 205, 196, 0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4ECDC4',
+  },
+  backButtonText: {
     fontSize: 12,
     color: '#4ECDC4',
     marginLeft: 6,

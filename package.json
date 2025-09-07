@@ -7,6 +7,8 @@
     "web": "expo start --web",
     "android": "expo run:android --variant release",
     "ios": "expo run:ios",
+    "ios:clean": "./start-ios.sh",
+    "ios:safe": "WATCHMAN_DISABLE_SPAWN=true expo run:ios",
     "lint": "eslint ."
   },
   "codegenConfig": {

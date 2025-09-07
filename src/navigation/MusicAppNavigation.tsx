@@ -45,14 +45,12 @@ import { Platform } from 'react-native';
 
 const Stack = createNativeStackNavigator();
 
-export function MusicAppNavigation() {
-  const [currentScreen, setCurrentScreen] = useState('backend_engine'); // Temporary: skip splash for debugging
-  const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+interface MusicAppNavigationProps {
+  onReady?: () => void;
+}
 
-  // Log screen state changes
-  useEffect(() => {
-    console.log('🎯 Screen state changed to:', currentScreen);
-  }, [currentScreen]);
+export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
+  console.log('🎯 MusicAppNavigation starting...');
 
   useEffect(() => {
     // Configure Google Sign In
@@ -66,163 +64,46 @@ export function MusicAppNavigation() {
 
     // Firebase token service will be loaded on-demand during sign-in
     console.log('🔥 Firebase token service ready (on-demand loading)');
-    
-    // Check authentication status on component mount
-    checkAuthStatus();
   }, []);
 
-  // Check for existing authentication token
-  const checkAuthStatus = async () => {
-    try {
-      setIsCheckingAuth(true);
-      console.log('=================== Checking Authentication Status ===================');
-      
-      const token = await AsyncStorage.getItem('access_token');
-      const userData = await AsyncStorage.getItem('user_data');
-      
-      console.log('🔑 Stored token exists:', !!token);
-      
-      if (token && userData) {
-        const user = JSON.parse(userData);
-        console.log('👤 Stored user data:', user);
-        console.log('👤 Has username:', !!user.username);
-        
-        if (user.username && user.username !== null) {
-          // User is authenticated and has complete profile - go to main app
-          console.log('✅ User authenticated with complete profile - navigating to Music App');
-          console.log('🔄 Setting currentScreen to: authenticated');
-          console.log('=================== Auth Check Completed - Authenticated ===================');
-          setCurrentScreen('authenticated');
-          return;
-        } else {
-          console.log('⚠️ User authenticated but missing username - clearing auth');
-          // Clear incomplete auth data
-          await AsyncStorage.removeItem('access_token');
-          await AsyncStorage.removeItem('user_data');
-        }
-      }
-      
-      console.log('❌ No valid authentication found - showing backend engine home');
-      console.log('=================== Auth Check Completed - Not Authenticated ===================');
-      console.log('🔄 Setting currentScreen to: backend_engine');
-      setCurrentScreen('backend_engine');
-    } catch (error) {
-      console.error('Error checking auth status:', error);
-      setCurrentScreen('backend_engine');
-    } finally {
-      setIsCheckingAuth(false);
-    }
-  };
-
-  // Handle splash screen completion
-  const handleSplashComplete = () => {
-    console.log('🎬 Splash screen completed, checking auth status...');
-    checkAuthStatus();
-  };
-
-  // Handle welcome screen completion
-  const handleWelcomeComplete = () => {
-    setCurrentScreen('navigation');
-  };
-
-  // Show splash screen
-  console.log('🎯 Current screen state:', currentScreen, 'isCheckingAuth:', isCheckingAuth);
-  
-  if (currentScreen === 'splash') {
-    return (
-      <ThemeProvider>
-        <AuthProvider>
-          <StatusBar barStyle="light-content" />
-          <SplashScreen onComplete={handleSplashComplete} />
-        </AuthProvider>
-      </ThemeProvider>
-    );
-  }
-
-  // Show welcome screen when starting music app flow
-  if (currentScreen === 'welcome') {
-    return (
-      <ThemeProvider>
-        <AuthProvider>
-          <StatusBar barStyle="light-content" />
-          <WelcomeScreen onGetStarted={handleWelcomeComplete} />
-        </AuthProvider>
-      </ThemeProvider>
-    );
-  }
-
-  // Show authenticated music app
-  if (currentScreen === 'authenticated') {
-    return (
-      <ThemeProvider>
-        <AuthProvider>
-          <NavigationContainer>
-            <StatusBar barStyle="light-content" />
-            <Stack.Navigator 
-              screenOptions={{ 
-                headerShown: false,
-                animation: 'slide_from_right'
-              }}
-              initialRouteName="Tabs"
-            >
-              {/* Music App Screens */}
-              <Stack.Screen name="Tabs" component={TabNavigator} />
-              <Stack.Screen name="Auth" component={AuthScreen} />
-              <Stack.Screen name="ResponseScreen" component={ResponseScreen} />
-              <Stack.Screen name="WelcomeUser" component={WelcomeUserScreen} />
-              <Stack.Screen name="UsernamePicker" component={UsernamePickerScreen} />
-              <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
-              <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-              <Stack.Screen name="Game" component={GameScreen} />
-              <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-              <Stack.Screen name="MusicSettings" component={MusicSettingsScreen} />
-              <Stack.Screen name="CreatePost" component={CreatePostScreen} />
-              <Stack.Screen name="PostDetail" component={PostDetailScreen} />
-              <Stack.Screen name="ContentViewer" component={ContentViewerScreen} options={{ headerShown: false }} />
-              <Stack.Screen name="UserExplore" component={UserExploreScreen} options={{ headerShown: false }} />
-              <Stack.Screen name="UserHome" component={UserHomeScreen} options={{ headerShown: false }} />
-              <Stack.Screen name="Games" component={GamesScreen} />
-              <Stack.Screen name="GamePayload" component={GamePayloadScreen} />
-              
-              {/* Backend Engine Screens - accessible from authenticated state */}
-              <Stack.Screen name="BackendHome" component={Home} />
-              <Stack.Screen name="Tuneo" component={Tuneo} />
-              <Stack.Screen name="FlappyBird" component={FlappyBird} />
-              <Stack.Screen name="TestSDK" component={TestGameLauncher} />
-              <Stack.Screen 
-                name="Settings" 
-                component={Settings} 
-                options={() => ({
-                  headerTitleStyle: { color: Colors.primary },
-                  headerStyle: { backgroundColor: Colors.bgTitle },
-                  headerTintColor: Colors.primary,
-                  headerShadowVisible: false,
-                  ...(Platform.OS === "ios"
-                    ? { presentation: "fullScreenModal", headerRight: () => <CloseButton /> }
-                    : {}),
-                })}
-              />
-            </Stack.Navigator>
-          </NavigationContainer>
-        </AuthProvider>
-      </ThemeProvider>
-    );
-  }
-
-  // Default: Show backend engine navigation flow
+  // Direct navigation approach - no state management
   return (
     <ThemeProvider>
       <AuthProvider>
-        <NavigationContainer>
+        <NavigationContainer onReady={onReady}>
           <StatusBar barStyle="light-content" />
           <Stack.Navigator 
             screenOptions={{ 
               headerShown: false,
               animation: 'slide_from_right'
             }}
-            initialRouteName="BackendHome"
+            initialRouteName="Auth"
           >
-            {/* Backend Engine Screens */}
+            {/* Music App Authentication Flow */}
+            <Stack.Screen name="Auth" component={AuthScreen} />
+            <Stack.Screen name="ResponseScreen" component={ResponseScreen} />
+            <Stack.Screen name="WelcomeUser" component={WelcomeUserScreen} />
+            <Stack.Screen name="UsernamePicker" component={UsernamePickerScreen} />
+            <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
+            
+            {/* Music App Tabs - After authentication */}
+            <Stack.Screen name="Tabs" component={TabNavigator} />
+            <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+            <Stack.Screen name="Game" component={GameScreen} />
+            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+            <Stack.Screen name="MusicSettings" component={MusicSettingsScreen} />
+            <Stack.Screen name="CreatePost" component={CreatePostScreen} />
+            <Stack.Screen name="PostDetail" component={PostDetailScreen} />
+            <Stack.Screen name="ContentViewer" component={ContentViewerScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="UserExplore" component={UserExploreScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="UserHome" component={UserHomeScreen} options={{ headerShown: false }} />
+            <Stack.Screen name="Games" component={GamesScreen} />
+            <Stack.Screen name="GamePayload" component={GamePayloadScreen} />
+            <Stack.Screen name="Profile" component={ProfileScreen} />
+            <Stack.Screen name="Explore" component={ExploreScreen} />
+            <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
+            
+            {/* Backend Engine Screens - Accessible from music app profile */}
             <Stack.Screen name="BackendHome" component={Home} />
             <Stack.Screen name="Tuneo" component={Tuneo} />
             <Stack.Screen name="FlappyBird" component={FlappyBird} />
@@ -240,30 +121,6 @@ export function MusicAppNavigation() {
                   : {}),
               })}
             />
-            
-            {/* Music App Authentication Flow - accessible from backend engine */}
-            <Stack.Screen name="MusicAuth" component={AuthScreen} />
-            <Stack.Screen name="ResponseScreen" component={ResponseScreen} />
-            <Stack.Screen name="WelcomeUser" component={WelcomeUserScreen} />
-            <Stack.Screen name="UsernamePicker" component={UsernamePickerScreen} />
-            <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
-            <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-            <Stack.Screen name="Game" component={GameScreen} />
-            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-            <Stack.Screen name="MusicSettings" component={MusicSettingsScreen} />
-            <Stack.Screen name="CreatePost" component={CreatePostScreen} />
-            <Stack.Screen name="PostDetail" component={PostDetailScreen} />
-            <Stack.Screen name="ContentViewer" component={ContentViewerScreen} options={{ headerShown: false }} />
-            <Stack.Screen name="UserExplore" component={UserExploreScreen} options={{ headerShown: false }} />
-            <Stack.Screen name="UserHome" component={UserHomeScreen} options={{ headerShown: false }} />
-            <Stack.Screen name="Games" component={GamesScreen} />
-            <Stack.Screen name="GamePayload" component={GamePayloadScreen} />
-            
-            {/* Music App Tabs - accessible from backend engine */}
-            <Stack.Screen name="MusicTabs" component={TabNavigator} />
-            <Stack.Screen name="Profile" component={ProfileScreen} />
-            <Stack.Screen name="Explore" component={ExploreScreen} />
-            <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>

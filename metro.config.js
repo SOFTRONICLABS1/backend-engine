@@ -8,4 +8,9 @@ config.resolver.alias = {
   '@': path.resolve(__dirname, 'src'),
 };
 
+// Disable watchman to avoid file limit issues
+config.watcher = {
+  useWatchman: false,
+};
+
 module.exports = config;

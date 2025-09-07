@@ -29,6 +29,7 @@ export const API_ENDPOINTS = {
     GET_UPLOAD_URL: '/content/get-upload-url',
     CREATE_WITH_S3_KEY: '/content/create-with-s3-key',
     LIST: '/content',
+    PUBLIC: '/content/public',
     DETAILS: (id: string) => `/content/${id}`,
   },
   USER: {
