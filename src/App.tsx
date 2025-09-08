@@ -1,4 +1,3 @@
-import * as SplashScreen from "expo-splash-screen"
 import * as React from "react"
 import { useEffect } from "react"
 import { Navigation } from "./navigation"
@@ -7,8 +6,6 @@ import { GestureHandlerRootView } from "react-native-gesture-handler"
 import { initializeGlobalMicrophone } from "./hooks/useGlobalMicrophoneManager"
 import { ThemeProvider } from "./theme/ThemeContext"
 import { AuthProvider } from "./context/AuthContext"
-
-SplashScreen.preventAutoHideAsync()
 
 export function App() {
   // Initialize global microphone system when app starts
@@ -34,7 +31,7 @@ export function App() {
     // Use the enhanced music app navigation with authentication and full feature set
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <MusicAppNavigation onReady={() => SplashScreen.hideAsync()} />
+        <MusicAppNavigation />
       </GestureHandlerRootView>
     )
   } else {
@@ -52,7 +49,7 @@ export function App() {
                 ],
               }}
               onReady={() => {
-                SplashScreen.hideAsync()
+                console.log('Navigation ready')
               }}
             />
           </AuthProvider>

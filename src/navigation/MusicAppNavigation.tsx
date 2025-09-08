@@ -6,7 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemeProvider } from '../theme/ThemeContext';
-import { AuthProvider, useAuth } from '../context/AuthContext';
+import { AuthProvider } from '../context/AuthContext';
 
 // Import existing backend-engine screens
 import { Home } from './screens/Home';
@@ -51,7 +51,7 @@ interface MusicAppNavigationProps {
 
 export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
   console.log('🎯 MusicAppNavigation starting...');
-  const [currentScreen, setCurrentScreen] = useState('loading');
+  const [currentScreen, setCurrentScreen] = useState('splash');
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
 
   useEffect(() => {
@@ -66,10 +66,19 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
 
     // Firebase token service will be loaded on-demand during sign-in
     console.log('🔥 Firebase token service ready (on-demand loading)');
-    
-    // Check auth status on app start
-    checkAuthStatus();
   }, []);
+
+  // Handle splash screen completion
+  const handleSplashComplete = () => {
+    setCurrentScreen('welcome');
+  };
+
+  // Handle welcome slides completion
+  const handleWelcomeComplete = () => {
+    setCurrentScreen('loading');
+    // Check auth status after welcome completes
+    checkAuthStatus();
+  };
 
   // Check for existing authentication token
   const checkAuthStatus = async () => {
@@ -136,6 +145,28 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
       setIsCheckingAuth(false);
     }
   };
+
+  // Show splash screen first
+  if (currentScreen === 'splash') {
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <SplashScreen onComplete={handleSplashComplete} />
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
+
+  // Show welcome slides after splash
+  if (currentScreen === 'welcome') {
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <WelcomeScreen onGetStarted={handleWelcomeComplete} />
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
 
   // Show loading while checking auth
   if (currentScreen === 'loading' || isCheckingAuth) {
