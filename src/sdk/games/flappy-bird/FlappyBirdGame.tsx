@@ -96,13 +96,15 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   
   
   // Add error handling for pitch detection hook
-  let pitch = 0, isActive = false, micAccess = 'pending', startStreaming = () => Promise.resolve()
+  let pitch = 0, isActive = false, micAccess = 'pending', startStreaming = () => Promise.resolve(), reinitialize = () => Promise.resolve(), restartStream = () => Promise.resolve()
   try {
     const pitchData = useGlobalPitchDetection()
     pitch = pitchData.pitch || 0
     isActive = pitchData.isActive || false
     micAccess = pitchData.micAccess || 'pending'
     startStreaming = pitchData.startStreaming || (() => Promise.resolve())
+    reinitialize = pitchData.reinitialize || (() => Promise.resolve())
+    restartStream = pitchData.restartStream || (() => Promise.resolve())
   } catch (error) {
     console.error('Error initializing pitch detection in FlappyBird:', error)
   }
@@ -174,17 +176,28 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   // Initialize microphone when component mounts
   useEffect(() => {
     const initMicrophone = async () => {
+      console.log('🎤 FlappyBirdGame: Initializing microphone system...');
       try {
-        // Add small delay to ensure component is fully mounted
+        // Try to reinitialize the microphone system first
+        const success = await reinitialize();
+        if (!success) {
+          console.log('🎤 FlappyBirdGame: Initial reinitialize failed, trying restart stream...');
+          await restartStream();
+        }
+        
+        // Add small delay to ensure microphone is fully ready
         setTimeout(async () => {
-          await startStreaming()
+          if (!isActive) {
+            console.log('🎤 FlappyBirdGame: Microphone still not active, trying startStreaming...');
+            await startStreaming();
+          }
           // Give it some time for microphone to become active
           setTimeout(() => {
             setIsInitializing(false)
-          }, 2000)
-        }, 100)
+          }, 1000) // Reduced wait time
+        }, 500) // Reduced delay
       } catch (error) {
-        console.error('Failed to start microphone streaming in FlappyBird:', error)
+        console.error('Failed to initialize microphone in FlappyBird:', error)
         setIsInitializing(false) // Don't stay in loading state forever
       }
     }
@@ -197,6 +210,29 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
     const newTolerance = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     currentToleranceRef.current = newTolerance
   }, [difficulty])
+
+  // Monitor microphone health and restart if needed
+  useEffect(() => {
+    if (gameState !== 'playing') return;
+    
+    const checkMicrophoneHealth = async () => {
+      if (micAccess === 'granted' && !isActive) {
+        console.log('🎤 FlappyBirdGame: Microphone appears to be stuck, attempting restart...');
+        try {
+          await restartStream();
+        } catch (error) {
+          console.error('🎤 FlappyBirdGame: Failed to restart microphone stream:', error);
+        }
+      }
+    };
+    
+    // Check every 3 seconds during gameplay
+    const healthCheckInterval = setInterval(checkMicrophoneHealth, 3000);
+    
+    return () => {
+      clearInterval(healthCheckInterval);
+    };
+  }, [gameState, micAccess, isActive])
   
   // Convert frequency to Y position on screen (LINEAR mapping for consistent visual gaps)
   const frequencyToY = useCallback((freq: number) => {
@@ -503,18 +539,6 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         
         <View style={styles.menuContainer}>
           <Text style={styles.title}>Pitch Bird</Text>
-          <Text style={styles.subtitle}>Initializing microphone...</Text>
-          
-          <View style={[styles.statusContainer, { backgroundColor: 'rgba(255, 193, 7, 0.2)' }]}>
-            <MaterialCommunityIcons 
-              name="microphone-settings" 
-              size={20} 
-              color="#ffc107" 
-            />
-            <Text style={[styles.statusText, { color: "#ffc107" }]}>
-              Setting up audio...
-            </Text>
-          </View>
         </View>
       </View>
     )
@@ -533,8 +557,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         </TouchableOpacity>
         
         <View style={styles.menuContainer}>
-          <Text style={styles.title}>Pitch Bird</Text>
-          <Text style={styles.subtitle}>Change your voice pitch to move the bird up and down!</Text>
+          <Text style={styles.title}>Flappy Bird</Text>
           
           {/* Display song title if provided */}
           {notes?.title && (
@@ -545,23 +568,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
               </Text>
             </View>
           )}
-          
-          {/* Microphone Status */}
-          <View style={[styles.statusContainer, { 
-            backgroundColor: isActive ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)' 
-          }]}>
-            <MaterialCommunityIcons 
-              name={isActive ? "microphone" : "microphone-off"} 
-              size={20} 
-              color={isActive ? "#22c55e" : "#ef4444"} 
-            />
-            <Text style={[styles.statusText, { 
-              color: isActive ? "#22c55e" : "#ef4444" 
-            }]}>
-              {isActive ? "Microphone Active" : "Microphone Inactive"}
-            </Text>
-          </View>
-          
+                    
           {!isActive && (
             <View style={styles.instructionContainer}>
               <Text style={styles.instructionTitle}>How to start:</Text>

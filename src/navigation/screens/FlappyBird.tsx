@@ -459,18 +459,6 @@ export const FlappyBird = () => {
         
         <View style={styles.menuContainer}>
           <Text style={styles.title}>Pitch Bird</Text>
-          <Text style={styles.subtitle}>Initializing microphone...</Text>
-          
-          <View style={[styles.statusContainer, { backgroundColor: 'rgba(255, 193, 7, 0.2)' }]}>
-            <MaterialCommunityIcons 
-              name="microphone-settings" 
-              size={20} 
-              color="#ffc107" 
-            />
-            <Text style={[styles.statusText, { color: "#ffc107" }]}>
-              Setting up audio...
-            </Text>
-          </View>
         </View>
       </View>
     )
