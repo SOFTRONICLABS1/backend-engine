@@ -29,6 +29,33 @@ class UserService {
   }
 
   /**
+   * Get user by ID (alias for getUserProfile for backward compatibility)
+   * @param {string} userId - User ID
+   * @returns {Promise} User data
+   */
+  async getUserById(userId: string) {
+    try {
+      console.log('=================== Fetching User By ID ===================');
+      console.log('🔍 User ID:', userId);
+      
+      // Use the correct endpoint from your curl command: /auth/user/{user_id}
+      const response = await apiClient.get(API_ENDPOINTS.AUTH.USER(userId));
+      
+      console.log('✅ User fetched successfully');
+      console.log('👤 User data:', JSON.stringify(response.data, null, 2));
+      console.log('=================== User By ID Fetched ===================');
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to fetch user by ID:', error);
+      if (error.response) {
+        console.error('❌ API Error Response:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Update user profile
    * @param {object} profileData - Profile data to update
    * @returns {Promise} Updated profile data

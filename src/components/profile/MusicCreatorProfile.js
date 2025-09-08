@@ -16,7 +16,13 @@ export default function MusicCreatorProfile({
   userPosts = [],
   onFollowToggle,
   onMessage,
-  navigation
+  navigation,
+  userId,
+  totalContent,
+  yearsOfExperience,
+  location,
+  isVerified,
+  subscriptionTier
 }) {
   const { theme } = useTheme();
   const [isFollowing, setIsFollowing] = useState(false);
@@ -86,7 +92,17 @@ export default function MusicCreatorProfile({
       <TouchableOpacity
         style={[styles.gridItem, { width: itemWidth, height: itemWidth }]}
         onPress={() => {
-          console.log('Open post:', item.id);
+          console.log('🎬 Opening content:', item.id);
+          console.log('🧭 Navigating to UserHome with creator content');
+          
+          // Navigate to UserHome screen with creator's content
+          navigation.navigate('UserHome', {
+            userId: userId,
+            userName: creatorName,
+            userDisplayName: creatorName,
+            userAvatar: avatar,
+            contentId: item.id  // Start from the clicked content
+          });
         }}
       >
         <View style={[styles.postThumbnail]}>

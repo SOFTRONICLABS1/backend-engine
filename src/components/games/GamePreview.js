@@ -34,6 +34,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
   const [isBuffering, setIsBuffering] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
+  const [showUnmuteIcon, setShowUnmuteIcon] = useState(false);
   
   // Animation refs
   const likeScale = useRef(new Animated.Value(1)).current;
@@ -242,6 +243,11 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
       console.log('🔇 Muting audio (video continues playing)');
     } else {
       console.log('🔊 Unmuting audio (video continues playing)');
+      // Show unmute icon briefly when unmuting
+      setShowUnmuteIcon(true);
+      setTimeout(() => {
+        setShowUnmuteIcon(false);
+      }, 1500); // Show for 1.5 seconds
     }
   };
 
@@ -281,7 +287,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
         {/* Background video with fallback to image */}
         {currentVideoUrl && currentVideoUrl !== 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' ? (
           <Video
-            key={`video-${musicVideoReel?.contentId}-${isMuted}`}
+            key={`video-${musicVideoReel?.contentId}`}
             ref={videoRef}
             source={{ uri: currentVideoUrl }}
             style={styles.backgroundVideo}
@@ -289,7 +295,6 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
             repeat={true}
             paused={!isPlaying || !isScreenFocused || !isCurrentItem}  // Only play when playing AND screen focused AND current item
             muted={isMuted || !isPlaying || !isScreenFocused || !isCurrentItem}  // Mute when not active
-            volume={isMuted || !isPlaying || !isScreenFocused || !isCurrentItem ? 0.0 : 1.0}  // Volume control
             onError={(error) => {
               console.error('Video playback error:', error);
               // Check if error is due to expired URL, network issues, or 404 and refresh
@@ -378,7 +383,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
             <View style={styles.loadingIndicator}>
               <ActivityIndicator size="large" color="white" />
               <Text style={styles.loadingText}>
-                {isBuffering ? 'Buffering...' : 'Loading...'}
+                Loading...
               </Text>
               {loadProgress > 0 && loadProgress < 100 && (
                 <View style={styles.progressBarContainer}>
@@ -388,10 +393,14 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
             </View>
           )}
           
-          {/* Mute indicator */}
-          {isMuted && isLoaded && !isBuffering && (
+          {/* Audio state indicator (mute/unmute in same position) */}
+          {((isMuted && isLoaded && !isBuffering) || (showUnmuteIcon && isLoaded && !isBuffering)) && (
             <View style={styles.muteIndicator}>
-              <IconSymbol name="speaker.slash.fill" size={60} color="white" />
+              <IconSymbol 
+                name={isMuted ? "volume-mute" : "volume-high"} 
+                size={28} 
+                color="white" 
+              />
             </View>
           )}
         </TouchableOpacity>
@@ -489,7 +498,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
           <TouchableOpacity style={styles.instagramActionButton} onPress={handleLikePress}>
             <Animated.View style={{ transform: [{ scale: likeScale }] }}>
               <IconSymbol 
-                size={40} 
+                size={32} 
                 name={liked ? "heart.fill" : "heart"} 
                 color={liked ? '#FF3040' : 'white'} 
               />
@@ -501,7 +510,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
 
           <TouchableOpacity style={styles.instagramActionButton} onPress={handleCommentPress}>
             <Animated.View style={{ transform: [{ scale: commentScale }] }}>
-              <IconSymbol size={32} name="bubble.right" color="white" />
+              <IconSymbol size={28} name="chatbubble" color="white" />
             </Animated.View>
             <Text style={[styles.instagramActionText, { color: 'white' }]}>{formatNumber(commentCount)}</Text>
           </TouchableOpacity>
@@ -552,9 +561,6 @@ const styles = StyleSheet.create({
     top: '50%',
     left: '50%',
     transform: [{ translateX: -60 }, { translateY: -50 }],
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    borderRadius: 15,
-    padding: 20,
     alignItems: 'center',
     justifyContent: 'center',
     minWidth: 120,
@@ -694,7 +700,7 @@ const styles = StyleSheet.create({
   rightActions: {
     position: 'absolute',
     right: 8,
-    bottom: 180,
+    bottom: 220,
     alignItems: 'center',
   },
   gameActionButton: {

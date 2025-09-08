@@ -49,6 +49,8 @@ export const IconSymbol: React.FC<IconSymbolProps> = ({ name, size, color }) => 
       'warning': 'warning',
       'star': 'star',
       'star.fill': 'star',
+      'volume-high': 'volume-high',
+      'volume-mute': 'volume-mute',
     };
 
     // Material Icons mapping

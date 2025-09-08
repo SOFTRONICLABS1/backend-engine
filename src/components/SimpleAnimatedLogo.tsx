@@ -12,17 +12,24 @@ export default function SimpleAnimatedLogo({ onAnimationComplete }: SimpleAnimat
 
   useEffect(() => {
     console.log('🎬 SimpleAnimatedLogo: Starting animation timer...');
+    console.log('🎬 SimpleAnimatedLogo: onAnimationComplete callback exists:', !!onAnimationComplete);
+    
     // Simple timeout instead of complex animations
     const timer = setTimeout(() => {
       console.log('🎬 SimpleAnimatedLogo: Animation complete, calling onAnimationComplete');
-      onAnimationComplete?.();
+      if (onAnimationComplete) {
+        onAnimationComplete();
+        console.log('🎬 SimpleAnimatedLogo: onAnimationComplete called successfully');
+      } else {
+        console.warn('🎬 SimpleAnimatedLogo: No onAnimationComplete callback provided!');
+      }
     }, 2500);
 
     return () => {
       console.log('🎬 SimpleAnimatedLogo: Cleanup timer');
       clearTimeout(timer);
     };
-  }, []);
+  }, [onAnimationComplete]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
