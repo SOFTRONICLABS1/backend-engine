@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform } from "react-native"
-import { Canvas, Rect, Circle, Fill, Text as SkiaText, Group, matchFont } from "@shopify/react-native-skia"
+import { Canvas, Rect, Circle, Fill, Text as SkiaText, Group, matchFont, Image, useImage } from "@shopify/react-native-skia"
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useGlobalPitchDetection } from "@/hooks/useGlobalPitchDetection"
@@ -93,6 +93,9 @@ export interface FlappyBirdGameProps {
 export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd }) => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
+  
+  // Load flappy bird image
+  const birdImage = useImage(require('./assets/flappy-bird.png'))
   
   // Add error handling for pitch detection hook
   let pitch = 0, isActive = false, micAccess = 'pending', startStreaming = () => Promise.resolve()
@@ -484,12 +487,15 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         ))}
         
         {/* Bird */}
-        <Circle
-          cx={bird.x + BIRD_SIZE / 2}
-          cy={bird.y + BIRD_SIZE / 2}
-          r={BIRD_SIZE / 2}
-          color="#FFD700"
-        />
+        {birdImage && (
+          <Image
+            image={birdImage}
+            x={bird.x}
+            y={bird.y}
+            width={BIRD_SIZE * 2}
+            height={BIRD_SIZE * 2}
+          />
+        )}
       </Canvas>
     )
   }, [gameState, width, height, pipes, bird])
