@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, View, Text } from 'react-native';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemeProvider } from '../theme/ThemeContext';
-import { AuthProvider, useAuth } from '../context/AuthContext';
+import { AuthProvider } from '../context/AuthContext';
 
 // Import existing backend-engine screens
 import { Home } from './screens/Home';
@@ -52,7 +52,7 @@ interface MusicAppNavigationProps {
 export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
   console.log('🎯 MusicAppNavigation starting...');
   const [currentScreen, setCurrentScreen] = useState('loading');
-  const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     // Configure Google Sign In
@@ -67,9 +67,21 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
     // Firebase token service will be loaded on-demand during sign-in
     console.log('🔥 Firebase token service ready (on-demand loading)');
     
-    // Check auth status on app start
+    // Check auth status immediately on app start
     checkAuthStatus();
   }, []);
+
+  // Handle splash screen completion
+  const handleSplashComplete = () => {
+    setCurrentScreen('welcome');
+  };
+
+  // Handle welcome slides completion
+  const handleWelcomeComplete = async () => {
+    // Mark that user has seen welcome slides
+    await AsyncStorage.setItem('hasSeenWelcome', 'true');
+    setCurrentScreen('unauthenticated');
+  };
 
   // Check for existing authentication token
   const checkAuthStatus = async () => {
@@ -126,9 +138,18 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
         await AsyncStorage.removeItem('refresh_token');
       }
       
-      console.log('❌ No valid authentication found - showing auth flow');
+      console.log('❌ No valid authentication found - checking if first time user');
       console.log('=================== Auth Check Completed - Not Authenticated ===================');
-      setCurrentScreen('unauthenticated');
+      
+      // Check if user has seen welcome slides before
+      const hasSeenWelcome = await AsyncStorage.getItem('hasSeenWelcome');
+      if (hasSeenWelcome) {
+        // Returning user - go directly to auth
+        setCurrentScreen('unauthenticated');
+      } else {
+        // First time user - show splash and welcome screens
+        setCurrentScreen('splash');
+      }
     } catch (error) {
       console.error('Error checking auth status:', error);
       setCurrentScreen('unauthenticated');
@@ -137,17 +158,38 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
     }
   };
 
+  // Show splash screen first
+  if (currentScreen === 'splash') {
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <SplashScreen onComplete={handleSplashComplete} />
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
+
+  // Show welcome slides after splash
+  if (currentScreen === 'welcome') {
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <WelcomeScreen onGetStarted={handleWelcomeComplete} />
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
+
   // Show loading while checking auth
   if (currentScreen === 'loading' || isCheckingAuth) {
     return (
       <ThemeProvider>
         <AuthProvider>
-          <NavigationContainer onReady={onReady}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
             <StatusBar barStyle="light-content" />
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Loading" component={AuthScreen} />
-            </Stack.Navigator>
-          </NavigationContainer>
+            {/* Simple loading indicator */}
+            <Text style={{ color: 'white', fontSize: 16 }}>Loading...</Text>
+          </View>
         </AuthProvider>
       </ThemeProvider>
     );
