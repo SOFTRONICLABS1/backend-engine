@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, View, Text } from 'react-native';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -51,8 +51,8 @@ interface MusicAppNavigationProps {
 
 export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
   console.log('🎯 MusicAppNavigation starting...');
-  const [currentScreen, setCurrentScreen] = useState('splash');
-  const [isCheckingAuth, setIsCheckingAuth] = useState(false);
+  const [currentScreen, setCurrentScreen] = useState('loading');
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
   useEffect(() => {
     // Configure Google Sign In
@@ -66,6 +66,9 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
 
     // Firebase token service will be loaded on-demand during sign-in
     console.log('🔥 Firebase token service ready (on-demand loading)');
+    
+    // Check auth status immediately on app start
+    checkAuthStatus();
   }, []);
 
   // Handle splash screen completion
@@ -74,10 +77,10 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
   };
 
   // Handle welcome slides completion
-  const handleWelcomeComplete = () => {
-    setCurrentScreen('loading');
-    // Check auth status after welcome completes
-    checkAuthStatus();
+  const handleWelcomeComplete = async () => {
+    // Mark that user has seen welcome slides
+    await AsyncStorage.setItem('hasSeenWelcome', 'true');
+    setCurrentScreen('unauthenticated');
   };
 
   // Check for existing authentication token
@@ -135,9 +138,18 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
         await AsyncStorage.removeItem('refresh_token');
       }
       
-      console.log('❌ No valid authentication found - showing auth flow');
+      console.log('❌ No valid authentication found - checking if first time user');
       console.log('=================== Auth Check Completed - Not Authenticated ===================');
-      setCurrentScreen('unauthenticated');
+      
+      // Check if user has seen welcome slides before
+      const hasSeenWelcome = await AsyncStorage.getItem('hasSeenWelcome');
+      if (hasSeenWelcome) {
+        // Returning user - go directly to auth
+        setCurrentScreen('unauthenticated');
+      } else {
+        // First time user - show splash and welcome screens
+        setCurrentScreen('splash');
+      }
     } catch (error) {
       console.error('Error checking auth status:', error);
       setCurrentScreen('unauthenticated');
@@ -173,12 +185,11 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
     return (
       <ThemeProvider>
         <AuthProvider>
-          <NavigationContainer onReady={onReady}>
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#000' }}>
             <StatusBar barStyle="light-content" />
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="Loading" component={AuthScreen} />
-            </Stack.Navigator>
-          </NavigationContainer>
+            {/* Simple loading indicator */}
+            <Text style={{ color: 'white', fontSize: 16 }}>Loading...</Text>
+          </View>
         </AuthProvider>
       </ThemeProvider>
     );
