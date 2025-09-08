@@ -1,6 +1,15 @@
 import React from 'react'
 import { FlappyBirdGame } from './games/flappy-bird'
 
+/**
+ * Game Registry - Maps game names to IDs and components
+ * 
+ * For all games, use the navigation helpers from '@/utils/gameNavigation':
+ * - handleGameExit(navigation) - for back buttons
+ * - handleGameEnd(navigation, score) - when game completes
+ * - handleGameError(navigation, error) - when game errors
+ */
+
 // Game Registry - Maps game names to IDs and components
 export interface GameDefinition {
   id: string

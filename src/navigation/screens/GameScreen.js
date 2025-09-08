@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Alert, Text, SafeAreaView } from 'r
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
 import { GameLauncher } from '../../sdk/GameLauncher';
+import { handleGameEnd, handleGameError } from '../../utils/gameNavigation';
 
 export default function GameScreen({ route, navigation }) {
   const { theme } = useTheme();
@@ -63,23 +64,12 @@ export default function GameScreen({ route, navigation }) {
             onGameEnd={(score) => {
               console.log('Game ended with score:', score);
               onGameEnd?.(score);
-              Alert.alert(
-                'Game Finished!',
-                `Your score: ${score}\nGame: ${gameTitle}`,
-                [
-                  { text: 'Play Again', onPress: () => navigation.replace('Game', route.params) },
-                  { text: 'Close', onPress: () => navigation.goBack() }
-                ]
-              );
+              handleGameEnd(navigation, score);
             }}
             onError={(error) => {
               console.error('Game error:', error);
               onError?.(error);
-              Alert.alert(
-                'Game Error',
-                error || 'Failed to load game',
-                [{ text: 'OK', onPress: () => navigation.goBack() }]
-              );
+              handleGameError(navigation, error);
             }}
           />
         ) : contentId && gameId ? (
