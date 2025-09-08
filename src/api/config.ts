@@ -61,6 +61,18 @@ export const API_ENDPOINTS = {
     ACCOUNTS: '/search/accounts',
     CONTENT: '/search/content',
     TAGS: '/search/tags',
+  },
+  SOCIAL: {
+    FOLLOW: (userId: string) => `/social/users/${userId}/follow`,
+    UNFOLLOW: (userId: string) => `/social/users/${userId}/unfollow`,
+    IS_FOLLOWING: (userId: string) => `/social/users/${userId}/is-following`,
+    MY_FOLLOWERS: '/social/my/followers',
+    MY_FOLLOWING: '/social/my/following',
+    USER_FOLLOWERS: (userId: string) => `/social/users/${userId}/followers`,
+    USER_FOLLOWING: (userId: string) => `/social/users/${userId}/following`,
+    LIKE_CONTENT: (contentId: string) => `/social/content/${contentId}/like`,
+    UNLIKE_CONTENT: (contentId: string) => `/social/content/${contentId}/unlike`,
+    CONTENT_LIKES: (contentId: string) => `/social/content/${contentId}/likes`,
   }
 };
 
