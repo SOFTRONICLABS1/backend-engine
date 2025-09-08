@@ -57,6 +57,7 @@ export const API_ENDPOINTS = {
     SEND_OTP: '/phone/send-otp',
   },
   SEARCH: {
+    UNIFIED: '/search/',
     ACCOUNTS: '/search/accounts',
     CONTENT: '/search/content',
     TAGS: '/search/tags',
