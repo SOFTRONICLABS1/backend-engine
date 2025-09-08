@@ -2,11 +2,12 @@ import React, { useState } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, Text, SafeAreaView } from 'react-native';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
+import { GameLauncher } from '../../sdk/GameLauncher';
 
 export default function GameScreen({ route, navigation }) {
   const { theme } = useTheme();
   const [gameStarted, setGameStarted] = useState(false);
-  const { contentId, gameId, gameTitle } = route.params || {};
+  const { contentId, gameId, gameTitle, payload, onGameEnd, onError } = route.params || {};
 
   const handleContentLoad = (content) => {
     console.log('Game content loaded:', content);
@@ -52,17 +53,36 @@ export default function GameScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Close button */}
-      <TouchableOpacity 
-        style={styles.closeButton} 
-        onPress={handleClose}
-      >
-        <IconSymbol name="xmark" size={24} color={theme.text} />
-      </TouchableOpacity>
 
       {/* Game Content */}
       <View style={styles.gameContainer}>
-        {contentId && gameId ? (
+        {payload ? (
+          // Use GameLauncher when payload is available
+          <GameLauncher
+            payload={payload}
+            onGameEnd={(score) => {
+              console.log('Game ended with score:', score);
+              onGameEnd?.(score);
+              Alert.alert(
+                'Game Finished!',
+                `Your score: ${score}\nGame: ${gameTitle}`,
+                [
+                  { text: 'Play Again', onPress: () => navigation.replace('Game', route.params) },
+                  { text: 'Close', onPress: () => navigation.goBack() }
+                ]
+              );
+            }}
+            onError={(error) => {
+              console.error('Game error:', error);
+              onError?.(error);
+              Alert.alert(
+                'Game Error',
+                error || 'Failed to load game',
+                [{ text: 'OK', onPress: () => navigation.goBack() }]
+              );
+            }}
+          />
+        ) : contentId && gameId ? (
           <View style={styles.gameContent}>
             {!gameStarted ? (
               <View style={styles.gameStartContainer}>
@@ -104,7 +124,7 @@ export default function GameScreen({ route, navigation }) {
           <View style={styles.errorContainer}>
             <IconSymbol name="exclamationmark.triangle" size={48} color={theme.error} />
             <Text style={[styles.errorText, { color: theme.error }]}>
-              Missing required parameters: contentId or gameId
+              Missing required parameters: payload or (contentId and gameId)
             </Text>
           </View>
         )}
@@ -117,21 +137,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  closeButton: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
   gameContainer: {
     flex: 1,
-    marginTop: 60,
   },
   gameContent: {
     flex: 1,

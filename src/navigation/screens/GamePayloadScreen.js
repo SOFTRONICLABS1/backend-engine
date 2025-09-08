@@ -13,6 +13,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import contentService from '../../api/services/contentService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import VoiceDetector from '../../components/VoiceDetector';
+import { GameLauncher } from '../../sdk/GameLauncher';
 
 export default function GamePayloadScreen() {
   const { theme } = useTheme();
@@ -25,6 +26,8 @@ export default function GamePayloadScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [speechResults, setSpeechResults] = useState([]);
+  const [gameInstance, setGameInstance] = useState(null);
+  const [isLaunching, setIsLaunching] = useState(false);
 
   useEffect(() => {
     const loadPayloadData = async () => {
@@ -60,6 +63,14 @@ export default function GamePayloadScreen() {
     loadPayloadData();
   }, [contentId]);
 
+  // Auto-launch game when payload is ready
+  useEffect(() => {
+    if (!isLoading && userId && gameId && notes && !error && !isLaunching) {
+      console.log('🚀 Auto-launching game with complete payload');
+      handleLaunchGame();
+    }
+  }, [isLoading, userId, gameId, notes, error, isLaunching]);
+
   const formatNotes = (notesData) => {
     if (!notesData) return 'No notes available';
     
@@ -79,14 +90,63 @@ export default function GamePayloadScreen() {
     console.log('Speech ended');
   };
 
-  if (isLoading) {
+  const handleLaunchGame = () => {
+    if (!userId || !gameId || !notes) {
+      console.error('Missing required data for game launch:', { userId, gameId, notes });
+      return;
+    }
+
+    if (isLaunching) {
+      console.log('Game launch already in progress, skipping...');
+      return;
+    }
+
+    setIsLaunching(true);
+
+    try {
+      const payload = {
+        userId: userId,
+        gameId: gameId,
+        notes: notes
+      };
+
+      console.log('🚀 Launching game with payload:', payload);
+
+      // Navigate to the game screen with the GameLauncher component
+      navigation.navigate('Game', {
+        payload: payload,
+        gameTitle: gameTitle,
+        onGameEnd: (score) => {
+          console.log('Game ended with score:', score);
+          // Navigate back to the games list
+          navigation.goBack();
+        },
+        onError: (error) => {
+          console.error('Game error:', error);
+          // Navigate back on error
+          navigation.goBack();
+        }
+      });
+
+    } catch (error) {
+      console.error('Error launching game:', error);
+      setIsLaunching(false);
+    }
+  };
+
+  if (isLoading || isLaunching) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.primary} />
           <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-            Loading payload data...
+            {isLoading ? 'Loading payload data...' : 'Launching game...'}
           </Text>
+          {isLaunching && (
+            <Text style={[styles.gameTitle, { color: theme.primary, marginTop: 16 }]}>
+              {gameTitle}
+            </Text>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -177,6 +237,25 @@ export default function GamePayloadScreen() {
           )}
         </View>
 
+        {/* Launch Game Button */}
+        {userId && gameId && notes && !error && (
+          <TouchableOpacity
+            style={[
+              styles.launchButton, 
+              { 
+                backgroundColor: isLaunching ? theme.textSecondary : theme.primary,
+                opacity: isLaunching ? 0.7 : 1 
+              }
+            ]}
+            onPress={handleLaunchGame}
+            disabled={isLaunching}
+          >
+            <Text style={[styles.launchButtonText, { color: 'white' }]}>
+              {isLaunching ? 'Launching Game...' : '🎮 Launch Game'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Raw Payload JSON */}
         <View style={[styles.rawCard, { backgroundColor: theme.surface }]}>
           <Text style={[styles.cardTitle, { color: theme.text }]}>Raw JSON Payload</Text>
@@ -239,6 +318,11 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 12,
     fontSize: 16,
+  },
+  gameTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
   infoCard: {
     padding: 16,
@@ -327,5 +411,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginLeft: 8,
     marginBottom: 4,
+  },
+  launchButton: {
+    marginHorizontal: 16,
+    marginBottom: 16,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  launchButtonText: {
+    fontSize: 18,
+    fontWeight: 'bold',
   },
 });
