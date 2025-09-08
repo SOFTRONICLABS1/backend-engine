@@ -37,6 +37,8 @@ import GamePayloadScreen from './screens/GamePayloadScreen';
 import ProfileScreen from './screens/ProfileScreen';
 import ExploreScreen from './screens/ExploreScreen';
 import MusicHomeScreen from './screens/MusicHomeScreen';
+import FollowersScreen from './screens/FollowersScreen';
+import FollowingScreen from './screens/FollowingScreen';
 import TabNavigator from './TabNavigator';
 
 import Colors from '../Colors';
@@ -223,6 +225,8 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
               <Stack.Screen name="Games" component={GamesScreen} />
               <Stack.Screen name="GamePayload" component={GamePayloadScreen} />
               <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="Followers" component={FollowersScreen} />
+              <Stack.Screen name="Following" component={FollowingScreen} />
               <Stack.Screen name="Explore" component={ExploreScreen} />
               <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
               

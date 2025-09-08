@@ -17,15 +17,28 @@ import { formatNumber } from '../../utils/helpers';
 import { useTheme } from '../../theme/ThemeContext';
 import { AppColors } from '../../theme/Colors';
 import contentService from '../../api/services/contentService';
+import socialService from '../../api/services/socialService';
+import followStatusManager from '../../api/services/followStatusManager';
+import authService from '../../api/services/authService';
+import { navigateToUserProfile } from '../../utils/navigationHelpers';
 
 const { height: screenHeight } = Dimensions.get('window');
 
 export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = true, isScreenFocused = true, isCurrentItem = true }) => {
   const { theme } = useTheme();
   const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(musicVideoReel?.likes || 0);
-  const [commentCount, setCommentCount] = useState(musicVideoReel?.comments || 0);
+  const [likeCount, setLikeCount] = useState(0);
+  const [isLikeLoading, setIsLikeLoading] = useState(false);
   const [following, setFollowing] = useState(false);
+  
+  // Debug initial state
+  // console.log('🏗️ GamePreview: Component initialized for user:', musicVideoReel?.userId || musicVideoReel?.user?.id, 'initial following state:', following);
+  
+  // Add useEffect to track when following state changes
+  useEffect(() => {
+    const userId = musicVideoReel?.userId || musicVideoReel?.user?.id;
+    console.log('📊 GamePreview: Following state changed for user:', userId, 'new state:', following);
+  }, [following, musicVideoReel?.userId, musicVideoReel?.user?.id]);
   const [isPlaying, setIsPlaying] = useState(true);
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -35,10 +48,10 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
   const [showUnmuteIcon, setShowUnmuteIcon] = useState(false);
+  const [isOwnContent, setIsOwnContent] = useState(false);
   
   // Animation refs
   const likeScale = useRef(new Animated.Value(1)).current;
-  const commentScale = useRef(new Animated.Value(1)).current;
   const videoRef = useRef(null);
 
   // Function to extract URL parameters manually (React Native compatible)
@@ -152,6 +165,95 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
     }
   }, [musicVideoReel?.contentId, musicVideoReel?.videoUrl, isScreenFocused, isCurrentItem]);
 
+  // Subscribe to global follow status changes and check initial status
+  useEffect(() => {
+    const userId = musicVideoReel?.userId || musicVideoReel?.user?.id;
+    if (!userId) return;
+
+    // Check initial follow status from global manager first
+    const cachedStatus = followStatusManager.getFollowStatus(userId);
+    if (cachedStatus !== undefined) {
+      console.log('📦 GamePreview: Using cached follow status:', cachedStatus);
+      setFollowing(cachedStatus);
+    } else {
+      // If no cached status, check with API for all items
+      const checkInitialFollowStatus = async () => {
+        try {
+          console.log('🔍 GamePreview: Checking initial follow status for user:', userId);
+          const result = await socialService.getFollowStatus(userId);
+          console.log('✅ GamePreview: Initial follow status retrieved:', result.isFollowing);
+          setFollowing(result.isFollowing);
+          
+          // Cache the status for other components
+          followStatusManager.setInitialFollowStatus(userId, result.isFollowing);
+        } catch (error) {
+          console.error('❌ GamePreview: Failed to check initial follow status:', error);
+          // Default to not following if API fails
+          setFollowing(false);
+          followStatusManager.setInitialFollowStatus(userId, false);
+        }
+      };
+      
+      checkInitialFollowStatus();
+    }
+
+    // Subscribe to follow status changes
+    const unsubscribe = followStatusManager.subscribe((changedUserId, isFollowing) => {
+      if (changedUserId === userId) {
+        console.log('📡 GamePreview: Received follow status update for user:', changedUserId, 'isFollowing:', isFollowing);
+        setFollowing(isFollowing);
+      }
+    });
+
+    return unsubscribe;
+  }, [musicVideoReel?.userId, musicVideoReel?.user?.id]);
+
+  // Check if this content belongs to the current user
+  useEffect(() => {
+    const checkIfOwnContent = async () => {
+      try {
+        const currentUserId = await authService.getCurrentUserId();
+        const contentUserId = musicVideoReel?.userId || musicVideoReel?.user?.id;
+        
+        if (currentUserId && contentUserId) {
+          const isOwn = currentUserId === contentUserId;
+          console.log('🔍 GamePreview: Checking ownership - currentUserId:', currentUserId, 'contentUserId:', contentUserId, 'isOwn:', isOwn);
+          setIsOwnContent(isOwn);
+        }
+      } catch (error) {
+        console.error('❌ GamePreview: Failed to check content ownership:', error);
+        setIsOwnContent(false);
+      }
+    };
+
+    checkIfOwnContent();
+  }, [musicVideoReel?.userId, musicVideoReel?.user?.id]);
+
+  // Fetch real like count and status
+  useEffect(() => {
+    const fetchLikeData = async () => {
+      if (!musicVideoReel?.id) return;
+      
+      try {
+        console.log('❤️ GamePreview: Fetching like data for content:', musicVideoReel.id);
+        const result = await socialService.getContentLikes(musicVideoReel.id);
+        
+        const totalLikes = result.data?.likes_count || 0;
+        const isLikedByUser = result.data?.is_liked || false;
+        
+        console.log('📊 GamePreview: Like data - Total likes:', totalLikes, 'Is liked:', isLikedByUser);
+        
+        setLikeCount(totalLikes);
+        setLiked(isLikedByUser);
+      } catch (error) {
+        console.error('❌ Failed to fetch like data:', error);
+        // Keep default values if API fails
+      }
+    };
+
+    fetchLikeData();
+  }, [musicVideoReel?.id]);
+
   // Handle screen focus/blur to manage video playback
   useFocusEffect(
     React.useCallback(() => {
@@ -184,7 +286,11 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
     }
   };
 
-  const handleLikePress = () => {
+  const handleLikePress = async () => {
+    if (isLikeLoading || !musicVideoReel?.id) return;
+    
+    setIsLikeLoading(true);
+    
     // Instagram-style double-tap animation
     Animated.sequence([
       Animated.timing(likeScale, {
@@ -204,32 +310,46 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
       }),
     ]).start();
 
-    setLiked(!liked);
-    setLikeCount(prev => liked ? prev - 1 : prev + 1);
+    try {
+      console.log('❤️ GamePreview: Toggling like for content:', musicVideoReel.id, 'currently liked:', liked);
+      const result = await socialService.toggleContentLike(musicVideoReel.id, liked);
+      
+      console.log('✅ GamePreview: Like toggled successfully, new status:', result.isLiked);
+      
+      // Update local state with API result
+      setLiked(result.isLiked);
+      
+      // If we got "already liked" or "not liked" status, refresh the actual count from server
+      if (result.alreadyLiked || result.notLiked) {
+        console.log('🔄 GamePreview: Refreshing like count from server due to sync issue');
+        try {
+          const freshData = await socialService.getContentLikes(musicVideoReel.id);
+          setLikeCount(freshData.data?.likes_count || 0);
+        } catch (refreshError) {
+          console.error('❌ Failed to refresh like count:', refreshError);
+        }
+      } else {
+        // Normal toggle - update count locally
+        setLikeCount(prev => result.isLiked ? prev + 1 : prev - 1);
+      }
+      
+    } catch (error) {
+      console.error('❌ GamePreview: Failed to toggle like:', error);
+      // Refresh the like status from server in case of error
+      try {
+        console.log('🔄 GamePreview: Refreshing like data from server after error');
+        const freshData = await socialService.getContentLikes(musicVideoReel.id);
+        setLikeCount(freshData.data?.likes_count || 0);
+        setLiked(freshData.data?.is_liked || false);
+      } catch (refreshError) {
+        console.error('❌ Failed to refresh like data after error:', refreshError);
+        Alert.alert('Error', 'Failed to update like. Please try again.');
+      }
+    } finally {
+      setIsLikeLoading(false);
+    }
   };
 
-  const handleCommentPress = () => {
-    // Instagram-style tap animation
-    Animated.sequence([
-      Animated.timing(commentScale, {
-        toValue: 0.85,
-        duration: 60,
-        useNativeDriver: true,
-      }),
-      Animated.timing(commentScale, {
-        toValue: 1.1,
-        duration: 100,
-        useNativeDriver: true,
-      }),
-      Animated.timing(commentScale, {
-        toValue: 1,
-        duration: 80,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    Alert.alert('Comments', 'Comment functionality coming soon!');
-  };
 
 
   const handleVideoTap = () => {
@@ -251,22 +371,36 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
     }
   };
 
-  const handleFollowPress = () => {
-    setFollowing(!following);
+  const handleFollowPress = async () => {
+    try {
+      const userId = musicVideoReel.userId || musicVideoReel.user.id;
+      console.log('🔄 Toggling follow status for user:', userId);
+      console.log('🔄 Current follow state:', following);
+      
+      // Call the API first (no optimistic update to avoid confusion)
+      const result = await socialService.toggleFollow(userId, following);
+      
+      console.log('✅ Follow status updated successfully');
+      console.log('📊 New follow status from API:', result.isFollowing);
+      
+      // Update with actual result from API
+      setFollowing(result.isFollowing);
+      
+    } catch (error) {
+      console.error('❌ Failed to toggle follow status:', error);
+      
+      // Show error message
+      Alert.alert(
+        'Error', 
+        'Failed to update follow status. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const handleUserPress = () => {
-    // Navigate to User Profile screen
-    console.log('🧭 Navigating to user profile:', {
-      userId: musicVideoReel.userId || musicVideoReel.user.id,
-      username: musicVideoReel.user.name,
-      displayName: musicVideoReel.user.displayName
-    });
-    
-    navigation.navigate('UserProfile', {
-      userId: musicVideoReel.userId || musicVideoReel.user.id,
-      username: musicVideoReel.user.name
-    });
+    const targetUserId = musicVideoReel.userId || musicVideoReel.user.id;
+    navigateToUserProfile(navigation, targetUserId, musicVideoReel.user.name, 'GamePreview');
   };
 
   const getDifficultyColor = (difficulty) => {
@@ -436,25 +570,29 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
               <Text style={styles.username}>@{musicVideoReel.user.name}</Text>
             </TouchableOpacity>
             
-            {showFollowButton && (
-              <TouchableOpacity 
-                style={[
-                  styles.followButton, 
-                  { 
-                    backgroundColor: following ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.9)',
-                    borderColor: 'rgba(255,255,255,0.3)'
-                  }
-                ]} 
-                onPress={handleFollowPress}
-              >
-                <Text style={[
-                  styles.followButtonText, 
-                  { color: following ? 'white' : 'black' }
-                ]}>
-                  {following ? 'Following' : 'Follow'}
-                </Text>
-              </TouchableOpacity>
-            )}
+            {showFollowButton && !isOwnContent && (() => {
+              const userId = musicVideoReel?.userId || musicVideoReel?.user?.id;
+              console.log('🎯 GamePreview: Rendering follow button for user:', userId, 'following state:', following, 'showFollowButton:', showFollowButton, 'isOwnContent:', isOwnContent);
+              return (
+                <TouchableOpacity 
+                  style={[
+                    styles.followButton, 
+                    { 
+                      backgroundColor: following ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.9)',
+                      borderColor: 'rgba(255,255,255,0.3)'
+                    }
+                  ]} 
+                  onPress={handleFollowPress}
+                >
+                  <Text style={[
+                    styles.followButtonText, 
+                    { color: following ? 'white' : 'black' }
+                  ]}>
+                    {following ? 'Following' : 'Follow'}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })()}
           </View>
           
           <View style={styles.gameInfo}>
@@ -508,12 +646,6 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.instagramActionButton} onPress={handleCommentPress}>
-            <Animated.View style={{ transform: [{ scale: commentScale }] }}>
-              <IconSymbol size={28} name="chatbubble" color="white" />
-            </Animated.View>
-            <Text style={[styles.instagramActionText, { color: 'white' }]}>{formatNumber(commentCount)}</Text>
-          </TouchableOpacity>
 
         </View>
       </View>
@@ -700,7 +832,7 @@ const styles = StyleSheet.create({
   rightActions: {
     position: 'absolute',
     right: 8,
-    bottom: 220,
+    bottom: 290,
     alignItems: 'center',
   },
   gameActionButton: {

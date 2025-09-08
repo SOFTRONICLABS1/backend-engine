@@ -14,6 +14,8 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import searchService from '../../api/services/searchService';
+import authService from '../../api/services/authService';
+import { navigateToUserProfile } from '../../utils/navigationHelpers';
 
 // Mock data for search results
 const mockAccounts = [
@@ -188,18 +190,7 @@ export default function ExploreScreen({ navigation }) {
     return (
       <TouchableOpacity 
         style={styles.accountItem}
-        onPress={() => {
-          console.log('🧭 Navigating to user profile from search:', {
-            userId: item.id,
-            username: item.username,
-            displayName: displayName
-          });
-          
-          navigation.navigate('UserProfile', {
-            userId: item.id,
-            username: item.username
-          });
-        }}
+        onPress={() => navigateToUserProfile(navigation, item.id, item.username, 'ExploreScreen')}
       >
         <Image source={{ uri: avatarUrl }} style={styles.accountAvatar} />
         <View style={styles.accountInfo}>
@@ -298,36 +289,6 @@ export default function ExploreScreen({ navigation }) {
     </TouchableOpacity>
   );
   
-  const renderSearchTabs = () => {
-    const tabs = ['All', 'Accounts', 'Content', 'Tags', 'Games'];
-    return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.searchTabsContainer}>
-        {tabs.map((tab) => (
-          <TouchableOpacity
-            key={tab}
-            style={[
-              styles.searchTab,
-              {
-                backgroundColor: activeSearchTab === tab ? theme.primary : theme.surface,
-              }
-            ]}
-            onPress={() => setActiveSearchTab(tab)}
-          >
-            <Text
-              style={[
-                styles.searchTabText,
-                {
-                  color: activeSearchTab === tab ? 'white' : theme.text
-                }
-              ]}
-            >
-              {tab}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    );
-  };
   
   const renderAllResults = () => {
     if (isSearching) {
@@ -486,10 +447,10 @@ export default function ExploreScreen({ navigation }) {
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header with Search */}
-      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+      {/* Fixed Header with Search */}
+      <View style={[styles.fixedHeader, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
         <Text style={[styles.headerTitle, { color: theme.text }]}>Explore</Text>
-        <View style={[styles.searchContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
+        <View style={[styles.searchInputContainer, { backgroundColor: theme.background, borderColor: theme.border }]}>
           <IconSymbol name="magnifyingglass" size={20} color={theme.textSecondary} />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
@@ -508,11 +469,42 @@ export default function ExploreScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Search Results or Content Grid */}
+      {/* Content Area */}
       {searchQuery.trim() !== '' ? (
-        <View style={{ flex: 1 }}>
-          {renderSearchTabs()}
-          {renderSearchResults()}
+        <View style={styles.searchContainer}>
+          {/* Search Tabs - Fixed Position */}
+          <View style={[styles.searchTabsContainer, { backgroundColor: theme.background }]}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabScrollView}>
+              {['All', 'Accounts', 'Content', 'Tags', 'Games'].map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  style={[
+                    styles.searchTab,
+                    {
+                      backgroundColor: activeSearchTab === tab ? theme.primary : theme.surface,
+                    }
+                  ]}
+                  onPress={() => setActiveSearchTab(tab)}
+                >
+                  <Text
+                    style={[
+                      styles.searchTabText,
+                      {
+                        color: activeSearchTab === tab ? 'white' : theme.text
+                      }
+                    ]}
+                  >
+                    {tab}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+          
+          {/* Search Results - Scrollable Content */}
+          <View style={styles.searchResultsArea}>
+            {renderSearchResults()}
+          </View>
         </View>
       ) : (
         <FlatList
@@ -533,17 +525,33 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
+  fixedHeader: {
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
+    zIndex: 10,
+  },
+  searchContainer: {
+    flex: 1,
+  },
+  searchTabsContainer: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  tabScrollView: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  searchResultsArea: {
+    flex: 1,
   },
   headerTitle: {
     fontSize: 24,
     fontWeight: 'bold',
     marginBottom: 16,
   },
-  searchContainer: {
+  searchInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -617,12 +625,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
-  // Search Tabs Styles
-  searchTabsContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginBottom: 8,
-  },
+  // Search Tab Styles
   searchTab: {
     paddingHorizontal: 16,
     paddingVertical: 8,

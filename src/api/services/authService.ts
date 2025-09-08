@@ -326,6 +326,24 @@ class AuthService {
   }
 
   /**
+   * Get current user ID from local storage
+   * @returns {Promise<string|null>} User ID or null if not found
+   */
+  async getCurrentUserId(): Promise<string | null> {
+    try {
+      const userData = await AsyncStorage.getItem('user_data');
+      if (userData) {
+        const user = JSON.parse(userData);
+        return user.id || user.user_id || null;
+      }
+      return null;
+    } catch (error) {
+      console.error('❌ Failed to get current user ID:', error);
+      return null;
+    }
+  }
+
+  /**
    * Logout user
    * @returns {Promise}
    */

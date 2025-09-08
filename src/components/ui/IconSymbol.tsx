@@ -51,6 +51,18 @@ export const IconSymbol: React.FC<IconSymbolProps> = ({ name, size, color }) => 
       'star.fill': 'star',
       'volume-high': 'volume-high',
       'volume-mute': 'volume-mute',
+      'gearshape.fill': 'settings',
+      'lightbulb.fill': 'bulb',
+      'xmark.circle.fill': 'close-circle',
+      'message': 'chatbubble-outline',
+      'menu': 'menu',
+      'xmark': 'close',
+      'arrow-back': 'arrow-back',
+      'checkmark.seal.fill': 'checkmark-circle',
+      'bell.fill': 'notifications',
+      'envelope.fill': 'mail',
+      'chevron.right': 'chevron-forward',
+      'play.circle.fill': 'play-circle',
     };
 
     // Material Icons mapping

@@ -16,6 +16,8 @@ import ExploreScreen from "./screens/ExploreScreen"
 import ProfileScreen from "./screens/ProfileScreen"
 import GamesScreen from "./screens/GamesScreen"
 import EditProfileScreen from "./screens/EditProfileScreen"
+import FollowersScreen from "./screens/FollowersScreen"
+import FollowingScreen from "./screens/FollowingScreen"
 import Colors from "@/Colors"
 import { CloseButton } from "@/components/CloseButton"
 import { Platform } from "react-native"
@@ -114,6 +116,18 @@ const RootStack = createNativeStackNavigator({
     },
     EditProfile: {
       screen: EditProfileScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    Followers: {
+      screen: FollowersScreen,
+      options: {
+        headerShown: false,
+      },
+    },
+    Following: {
+      screen: FollowingScreen,
       options: {
         headerShown: false,
       },

@@ -6,6 +6,7 @@ import { CommonActions, useFocusEffect } from '@react-navigation/native';
 import { useCallback } from 'react';
 import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import authService from '../../api/services/authService';
+import socialService from '../../api/services/socialService';
 import ProfileTabs from '../../components/ProfileTabs';
 
 const dummyUserData = {
@@ -135,11 +136,33 @@ export default function ProfileScreen({ navigation }) {
       const userProfile = await authService.getCurrentUser();
       console.log('👤 Profile API response:', userProfile);
       console.log('📝 Bio from API:', userProfile.bio);
+      
+      // Fetch follower and following counts in parallel
+      let followersCount = dummyUserData.followers;
+      let followingCount = dummyUserData.following;
+      
+      try {
+        console.log('🔢 ProfileScreen: Fetching real follower/following counts...');
+        const [followersResult, followingResult] = await Promise.all([
+          socialService.getMyFollowers(1, 1), // Just get first page to get total count
+          socialService.getMyFollowing(1, 1)  // Just get first page to get total count
+        ]);
+        
+        followersCount = followersResult?.data?.total || 0;
+        followingCount = followingResult?.data?.total || 0;
+        
+        console.log('📊 ProfileScreen: Real counts - Followers:', followersCount, 'Following:', followingCount);
+      } catch (socialError) {
+        console.error('❌ Failed to fetch social counts, using dummy data:', socialError);
+      }
+      
       setUserData({
         ...userProfile,
         ...dummyUserData, // Merge with dummy data for fields not in API response
         bio: userProfile.bio || '', // Use actual bio from API, empty if not set
         location: userProfile.location || 'Not specified',
+        followers: followersCount, // Use real follower count
+        following: followingCount, // Use real following count
       });
     } catch (error) {
       console.error('Failed to fetch user profile:', error);
@@ -407,7 +430,18 @@ export default function ProfileScreen({ navigation }) {
                 <View style={styles.buttonContainer}>
                   <TouchableOpacity 
                     style={[styles.editProfileButton, { backgroundColor: theme.surface, borderColor: theme.border }]} 
-                    onPress={() => navigation.navigate('EditProfile')}
+                    onPress={async () => {
+                      // Log access token when edit profile is clicked
+                      try {
+                        const AsyncStorage = await import('@react-native-async-storage/async-storage');
+                        const token = await AsyncStorage.default.getItem('access_token');
+                        console.log('🔑 ProfileScreen: Edit Profile clicked - Current access token:', token || 'No token found');
+                      } catch (error) {
+                        console.error('❌ ProfileScreen: Failed to get access token:', error);
+                      }
+                      
+                      navigation.navigate('EditProfile');
+                    }}
                   >
                     <Text style={[styles.editProfileButtonText, { color: theme.text }]}>Edit Profile</Text>
                   </TouchableOpacity>
@@ -421,14 +455,28 @@ export default function ProfileScreen({ navigation }) {
 
             {/* Social Stats */}
             <View style={[styles.statsContainer, { borderTopColor: theme.border, borderBottomColor: theme.border }]}>
-              <View style={styles.statItem}>
+              <TouchableOpacity 
+                style={styles.statItem}
+                onPress={() => {
+                  console.log('🔢 ProfileScreen: Navigating to Followers screen');
+                  navigation.navigate('Followers');
+                }}
+                activeOpacity={0.7}
+              >
                 <Text style={[styles.statValue, { color: theme.text }]}>{userData.followers.toLocaleString()}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Followers</Text>
-              </View>
-              <View style={styles.statItem}>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.statItem}
+                onPress={() => {
+                  console.log('🔢 ProfileScreen: Navigating to Following screen');
+                  navigation.navigate('Following');
+                }}
+                activeOpacity={0.7}
+              >
                 <Text style={[styles.statValue, { color: theme.text }]}>{userData.following.toLocaleString()}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Following</Text>
-              </View>
+              </TouchableOpacity>
               <View style={styles.statItem}>
                 <Text style={[styles.statValue, { color: theme.text }]}>{userData.totalPlaylists}</Text>
                 <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Playlists</Text>
@@ -533,7 +581,7 @@ export default function ProfileScreen({ navigation }) {
                   onPress={() => handleContentCreation('post')}
                 >
                   <View style={[styles.contentOptionIcon, { backgroundColor: theme.primary + '15' }]}>
-                    <Text style={[styles.postIcon, { color: theme.primary }]}>🎵</Text>
+                    <IconSymbol name="music.note" size={24} color={theme.primary} />
                   </View>
                   <View style={styles.contentOptionTextContainer}>
                     <Text style={[styles.contentOptionTitle, { color: theme.text }]}>Post</Text>

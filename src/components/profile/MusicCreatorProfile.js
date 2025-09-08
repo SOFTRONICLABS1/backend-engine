@@ -1,7 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, SafeAreaView, Modal, Alert, Dimensions, FlatList } from 'react-native';
 import { IconSymbol } from '../ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
+import socialService from '../../api/services/socialService';
+import followStatusManager from '../../api/services/followStatusManager';
+import authService from '../../api/services/authService';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -29,6 +33,113 @@ export default function MusicCreatorProfile({
   const [selectedPlaylist, setSelectedPlaylist] = useState(null);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
   const [activeTab, setActiveTab] = useState('posts');
+  const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [realFollowersCount, setRealFollowersCount] = useState(followers || 0);
+  const [realFollowingCount, setRealFollowingCount] = useState(following || 0);
+
+  // Subscribe to global follow status changes and check initial status
+  useEffect(() => {
+    if (!userId) return;
+
+    // Check initial follow status from global manager first
+    const cachedStatus = followStatusManager.getFollowStatus(userId);
+    if (cachedStatus !== undefined) {
+      console.log('📦 MusicCreatorProfile: Using cached follow status:', cachedStatus);
+      setIsFollowing(cachedStatus);
+    } else {
+      // If no cached status, check with API
+      const checkInitialFollowStatus = async () => {
+        try {
+          console.log('🔍 MusicCreatorProfile: Checking initial follow status for user:', userId);
+          const result = await socialService.getFollowStatus(userId);
+          console.log('✅ MusicCreatorProfile: Initial follow status retrieved:', result.isFollowing);
+          setIsFollowing(result.isFollowing);
+          
+          // Cache the status for other components
+          followStatusManager.setInitialFollowStatus(userId, result.isFollowing);
+        } catch (error) {
+          console.error('❌ MusicCreatorProfile: Failed to check initial follow status:', error);
+          // Default to not following if API fails
+          setIsFollowing(false);
+          followStatusManager.setInitialFollowStatus(userId, false);
+        }
+      };
+      
+      checkInitialFollowStatus();
+    }
+
+    // Subscribe to follow status changes
+    const unsubscribe = followStatusManager.subscribe((changedUserId, isFollowing) => {
+      if (changedUserId === userId) {
+        console.log('📡 MusicCreatorProfile: Received follow status update for user:', changedUserId, 'isFollowing:', isFollowing);
+        setIsFollowing(isFollowing);
+      }
+    });
+
+    return unsubscribe;
+  }, [userId]);
+
+  // Check if this is the current user's own profile
+  useEffect(() => {
+    const checkIfOwnProfile = async () => {
+      try {
+        const currentUserId = await authService.getCurrentUserId();
+        
+        if (currentUserId && userId) {
+          const isOwn = currentUserId === userId;
+          console.log('🔍 MusicCreatorProfile: Checking ownership - currentUserId:', currentUserId, 'profileUserId:', userId, 'isOwn:', isOwn);
+          setIsOwnProfile(isOwn);
+        }
+      } catch (error) {
+        console.error('❌ MusicCreatorProfile: Failed to check profile ownership:', error);
+        setIsOwnProfile(false);
+      }
+    };
+
+    checkIfOwnProfile();
+  }, [userId]);
+
+  // Fetch real follower/following counts
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchRealCounts = async () => {
+      try {
+        console.log('🔢 MusicCreatorProfile: Fetching real follower/following counts for user:', userId);
+        const [followersResult, followingResult] = await Promise.all([
+          socialService.getUserFollowers(userId, 1, 1), // Just get first page to get total count
+          socialService.getUserFollowing(userId, 1, 1)  // Just get first page to get total count
+        ]);
+        
+        const followersCount = followersResult?.data?.total || 0;
+        const followingCount = followingResult?.data?.total || 0;
+        
+        console.log('📊 MusicCreatorProfile: Real counts - Followers:', followersCount, 'Following:', followingCount);
+        
+        setRealFollowersCount(followersCount);
+        setRealFollowingCount(followingCount);
+      } catch (error) {
+        console.error('❌ Failed to fetch real social counts for user profile:', error);
+        // Keep using prop values if API fails
+      }
+    };
+
+    fetchRealCounts();
+  }, [userId]);
+
+  // Log access token when profile page loads
+  // useEffect(() => {
+  //   const logAccessToken = async () => {
+  //     try {
+  //       const token = await AsyncStorage.getItem('access_token');
+  //       console.log('🔑 MusicCreatorProfile: Current access token:', token ? token.substring(0, 50) + '...' : 'No token found');
+  //     } catch (error) {
+  //       console.error('❌ MusicCreatorProfile: Failed to get access token:', error);
+  //     }
+  //   };
+
+  //   logAccessToken();
+  // }, []); // Only run once when component mounts
 
   const safePlaylist = playlists || [];
   const safeFeaturedTracks = featuredTracks || [];
@@ -38,8 +149,8 @@ export default function MusicCreatorProfile({
     username: creatorName || 'Unknown User',
     avatar,
     bio: bio || 'Music creator and content maker',
-    followers: followers || 0,
-    following: following || 0,
+    followers: realFollowersCount,
+    following: realFollowingCount,
     totalPlaylists: safePlaylist.length,
     totalPlays: safePlaylist.reduce((total, playlist) => {
       return total + (playlist.trackCount || 0) * 1000;
@@ -48,9 +159,32 @@ export default function MusicCreatorProfile({
     featuredTracks: safeFeaturedTracks
   };
 
-  const handleFollowToggle = () => {
-    setIsFollowing(!isFollowing);
-    onFollowToggle?.();
+  const handleFollowToggle = async () => {
+    try {
+      console.log('🔄 Toggling follow status for user:', userId);
+      console.log('📊 Current follow status:', isFollowing);
+      
+      // Call the API with the current status
+      const result = await socialService.toggleFollow(userId, isFollowing);
+      
+      console.log('✅ Follow status updated successfully:', result);
+      
+      // Update state with the result from the API
+      setIsFollowing(result.isFollowing);
+      
+      // Call the original callback if provided
+      onFollowToggle?.();
+      
+    } catch (error) {
+      console.error('❌ Failed to toggle follow status:', error);
+      
+      // Show error message
+      Alert.alert(
+        'Error', 
+        'Failed to update follow status. Please try again.',
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const handleMessagePress = () => {
@@ -173,36 +307,38 @@ export default function MusicCreatorProfile({
               <Text style={[styles.email, { color: theme.textSecondary }]}>@{userData.username}</Text>
               
               {/* Follow/Message Buttons */}
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity 
-                  style={[
-                    styles.followButton, 
-                    { 
-                      backgroundColor: isFollowing ? theme.surface : theme.primary,
-                      borderColor: theme.primary,
-                      borderWidth: isFollowing ? 1 : 0
-                    }
-                  ]} 
-                  onPress={handleFollowToggle}
-                >
-                  <Text style={[
-                    styles.followButtonText, 
-                    { color: isFollowing ? theme.primary : 'white' }
-                  ]}>
-                    {isFollowing ? 'Following' : 'Follow'}
-                  </Text>
-                </TouchableOpacity>
-                
-                {isFollowing && (
+              {!isOwnProfile && (
+                <View style={styles.buttonContainer}>
                   <TouchableOpacity 
-                    style={[styles.messageButton, { backgroundColor: theme.surface, borderColor: theme.border }]} 
-                    onPress={handleMessagePress}
+                    style={[
+                      styles.followButton, 
+                      { 
+                        backgroundColor: isFollowing ? theme.surface : theme.primary,
+                        borderColor: theme.primary,
+                        borderWidth: isFollowing ? 1 : 0
+                      }
+                    ]} 
+                    onPress={handleFollowToggle}
                   >
-                    <IconSymbol name="message" size={16} color={theme.text} />
-                    <Text style={[styles.messageButtonText, { color: theme.text }]}>Message</Text>
+                    <Text style={[
+                      styles.followButtonText, 
+                      { color: isFollowing ? theme.primary : 'white' }
+                    ]}>
+                      {isFollowing ? 'Following' : 'Follow'}
+                    </Text>
                   </TouchableOpacity>
-                )}
-              </View>
+                  
+                  {isFollowing && (
+                    <TouchableOpacity 
+                      style={[styles.messageButton, { backgroundColor: theme.surface, borderColor: theme.border }]} 
+                      onPress={handleMessagePress}
+                    >
+                      <IconSymbol name="message" size={16} color={theme.text} />
+                      <Text style={[styles.messageButtonText, { color: theme.text }]}>Message</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
           </View>
 
@@ -210,14 +346,28 @@ export default function MusicCreatorProfile({
 
           {/* Social Stats */}
           <View style={[styles.statsContainer, { borderTopColor: theme.border }]}>
-            <View style={styles.statItem}>
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => {
+                console.log('🔢 MusicCreatorProfile: Navigating to Followers screen for user:', userId, 'username:', creatorName);
+                navigation.navigate('Followers', { userId: userId, username: creatorName });
+              }}
+              activeOpacity={0.7}
+            >
               <Text style={[styles.statValue, { color: theme.text }]}>{userData.followers.toLocaleString()}</Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Followers</Text>
-            </View>
-            <View style={styles.statItem}>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.statItem}
+              onPress={() => {
+                console.log('🔢 MusicCreatorProfile: Navigating to Following screen for user:', userId, 'username:', creatorName);
+                navigation.navigate('Following', { userId: userId, username: creatorName });
+              }}
+              activeOpacity={0.7}
+            >
               <Text style={[styles.statValue, { color: theme.text }]}>{userData.following.toLocaleString()}</Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Following</Text>
-            </View>
+            </TouchableOpacity>
             <View style={styles.statItem}>
               <Text style={[styles.statValue, { color: theme.text }]}>{userData.totalPlaylists}</Text>
               <Text style={[styles.statLabel, { color: theme.textSecondary }]}>Playlists</Text>
