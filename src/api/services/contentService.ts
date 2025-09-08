@@ -118,7 +118,8 @@ class ContentService {
     try {
       console.log('=================== Fetching User Content ===================');
       
-      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.LIST}?page=${page}&limit=${limit}&user=me`);
+      // Use the public endpoint with per_page parameter
+      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.PUBLIC}?page=${page}&per_page=${limit}`);
       
       console.log('✅ User content fetched successfully');
       console.log('=================== User Content Fetched ===================');
@@ -140,7 +141,8 @@ class ContentService {
     try {
       console.log('=================== Fetching My Content ===================');
       
-      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.LIST}?page=${page}&limit=${limit}&user=me`);
+      // Use the public endpoint with per_page parameter
+      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.PUBLIC}?page=${page}&per_page=${limit}`);
       
       console.log('✅ My content fetched successfully');
       console.log('=================== My Content Fetched ===================');
@@ -162,7 +164,8 @@ class ContentService {
     try {
       console.log('=================== Fetching Public Content ===================');
       
-      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.LIST}?page=${page}&limit=${limit}&visibility=public`);
+      // Use the public endpoint with per_page parameter
+      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.PUBLIC}?page=${page}&per_page=${limit}`);
       
       console.log('✅ Public content fetched successfully');
       console.log('=================== Public Content Fetched ===================');
