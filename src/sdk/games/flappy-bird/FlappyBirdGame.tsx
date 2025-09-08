@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
-import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform } from "react-native"
-import { Canvas, Rect, Circle, Fill, Text as SkiaText, Group, matchFont, Image, useImage } from "@shopify/react-native-skia"
+import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform, Image as RNImage } from "react-native"
+import { Canvas, Rect, Circle, Fill, Text as SkiaText, matchFont } from "@shopify/react-native-skia"
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useGlobalPitchDetection } from "@/hooks/useGlobalPitchDetection"
@@ -17,7 +17,7 @@ const systemFont = matchFont({
 
 // Game constants
 const GRAVITY = 0.5
-const BIRD_SIZE = 20
+const BIRD_SIZE = 50
 const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
 const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
@@ -94,8 +94,6 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
   
-  // Load flappy bird image
-  const birdImage = useImage(require('./assets/flappy-bird.png'))
   
   // Add error handling for pitch detection hook
   let pitch = 0, isActive = false, micAccess = 'pending', startStreaming = () => Promise.resolve()
@@ -486,16 +484,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
           </React.Fragment>
         ))}
         
-        {/* Bird */}
-        {birdImage && (
-          <Image
-            image={birdImage}
-            x={bird.x}
-            y={bird.y}
-            width={BIRD_SIZE * 2}
-            height={BIRD_SIZE * 2}
-          />
-        )}
+        {/* Bird placeholder - actual bird is rendered as overlay */}
       </Canvas>
     )
   }, [gameState, width, height, pipes, bird])
@@ -673,6 +662,21 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   return (
     <View style={styles.container}>
       {renderGame}
+      
+      {/* Animated Bird Overlay */}
+      {gameState === 'playing' && (
+        <RNImage
+          source={require('./assets/flappy-bird-gif.gif')}
+          style={{
+            position: 'absolute',
+            left: bird.x - 10, // Offset to center the larger bird
+            top: bird.y - 10,
+            width: BIRD_SIZE * 1.5, // 60 pixels (1.5x larger)
+            height: BIRD_SIZE * 1.5,
+            zIndex: 10,
+          }}
+        />
+      )}
       
       {/* Game UI overlay */}
       <View style={styles.gameUI}>
