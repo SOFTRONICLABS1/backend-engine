@@ -6,7 +6,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { ThemeProvider } from '../theme/ThemeContext';
-import { AuthProvider } from '../context/AuthContext';
+import { AuthProvider, useAuth } from '../context/AuthContext';
 
 // Import existing backend-engine screens
 import { Home } from './screens/Home';
@@ -51,6 +51,8 @@ interface MusicAppNavigationProps {
 
 export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
   console.log('🎯 MusicAppNavigation starting...');
+  const [currentScreen, setCurrentScreen] = useState('loading');
+  const [isCheckingAuth, setIsCheckingAuth] = useState(false);
 
   useEffect(() => {
     // Configure Google Sign In
@@ -64,9 +66,182 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
 
     // Firebase token service will be loaded on-demand during sign-in
     console.log('🔥 Firebase token service ready (on-demand loading)');
+    
+    // Check auth status on app start
+    checkAuthStatus();
   }, []);
 
-  // Direct navigation approach - no state management
+  // Check for existing authentication token
+  const checkAuthStatus = async () => {
+    try {
+      setIsCheckingAuth(true);
+      console.log('=================== Checking Authentication Status ===================');
+      
+      const token = await AsyncStorage.getItem('access_token');
+      const userData = await AsyncStorage.getItem('user_data');
+      const refreshToken = await AsyncStorage.getItem('refresh_token');
+      
+      console.log('🔑 Stored token exists:', !!token);
+      console.log('🔄 Stored refresh token exists:', !!refreshToken);
+      console.log('📄 Stored user data exists:', !!userData);
+      
+      // Debug: Show first 20 characters of token if it exists
+      if (token) {
+        console.log('🔍 Token preview:', token.substring(0, 20) + '...');
+      }
+      
+      // Debug: Show full user data if it exists
+      if (userData) {
+        try {
+          const user = JSON.parse(userData);
+          console.log('👤 Full stored user data:', JSON.stringify(user, null, 2));
+          console.log('👤 Username specifically:', user.username);
+          console.log('👤 Username type:', typeof user.username);
+          console.log('👤 Username is null:', user.username === null);
+          console.log('👤 Username is undefined:', user.username === undefined);
+          console.log('👤 Username truthy check:', !!user.username);
+          
+          if (user.username && user.username !== null) {
+            // User is authenticated and has complete profile - go to main app
+            console.log('✅ User authenticated with complete profile - navigating to Tabs');
+            console.log('=================== Auth Check Completed - Authenticated ===================');
+            setCurrentScreen('authenticated');
+            return;
+          } else {
+            console.log('⚠️ User authenticated but missing username - needs profile completion');
+            setCurrentScreen('needsUsername');
+            return;
+          }
+        } catch (parseError) {
+          console.error('❌ Error parsing user data:', parseError);
+          console.log('📄 Raw user data:', userData);
+        }
+      } else {
+        console.log('📄 No user data found in storage');
+      }
+      
+      if (token && !userData) {
+        console.log('🔑 Token exists but no user data - clearing token');
+        await AsyncStorage.removeItem('access_token');
+        await AsyncStorage.removeItem('refresh_token');
+      }
+      
+      console.log('❌ No valid authentication found - showing auth flow');
+      console.log('=================== Auth Check Completed - Not Authenticated ===================');
+      setCurrentScreen('unauthenticated');
+    } catch (error) {
+      console.error('Error checking auth status:', error);
+      setCurrentScreen('unauthenticated');
+    } finally {
+      setIsCheckingAuth(false);
+    }
+  };
+
+  // Show loading while checking auth
+  if (currentScreen === 'loading' || isCheckingAuth) {
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <NavigationContainer onReady={onReady}>
+            <StatusBar barStyle="light-content" />
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+              <Stack.Screen name="Loading" component={AuthScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
+
+  // User is authenticated - show main app with Tabs as initial route
+  if (currentScreen === 'authenticated') {
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <NavigationContainer onReady={onReady}>
+            <StatusBar barStyle="light-content" />
+            <Stack.Navigator 
+              screenOptions={{ 
+                headerShown: false,
+                animation: 'slide_from_right'
+              }}
+              initialRouteName="Tabs"
+            >
+              {/* Main App Screens */}
+              <Stack.Screen name="Tabs" component={TabNavigator} />
+              <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+              <Stack.Screen name="Game" component={GameScreen} />
+              <Stack.Screen name="EditProfile" component={EditProfileScreen} />
+              <Stack.Screen name="MusicSettings" component={MusicSettingsScreen} />
+              <Stack.Screen name="CreatePost" component={CreatePostScreen} />
+              <Stack.Screen name="PostDetail" component={PostDetailScreen} />
+              <Stack.Screen name="ContentViewer" component={ContentViewerScreen} options={{ headerShown: false }} />
+              <Stack.Screen name="UserExplore" component={UserExploreScreen} options={{ headerShown: false }} />
+              <Stack.Screen name="UserHome" component={UserHomeScreen} options={{ headerShown: false }} />
+              <Stack.Screen name="Games" component={GamesScreen} />
+              <Stack.Screen name="GamePayload" component={GamePayloadScreen} />
+              <Stack.Screen name="Profile" component={ProfileScreen} />
+              <Stack.Screen name="Explore" component={ExploreScreen} />
+              <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
+              
+              {/* Backend Engine Screens */}
+              <Stack.Screen name="BackendHome" component={Home} />
+              <Stack.Screen name="Tuneo" component={Tuneo} />
+              <Stack.Screen name="FlappyBird" component={FlappyBird} />
+              <Stack.Screen name="TestSDK" component={TestGameLauncher} />
+              <Stack.Screen 
+                name="Settings" 
+                component={Settings} 
+                options={() => ({
+                  headerTitleStyle: { color: Colors.primary },
+                  headerStyle: { backgroundColor: Colors.bgTitle },
+                  headerTintColor: Colors.primary,
+                  headerShadowVisible: false,
+                  ...(Platform.OS === "ios"
+                    ? { presentation: "fullScreenModal", headerRight: () => <CloseButton /> }
+                    : {}),
+                })}
+              />
+              
+              {/* Auth screens (accessible for re-auth if needed) */}
+              <Stack.Screen name="Auth" component={AuthScreen} />
+              <Stack.Screen name="ResponseScreen" component={ResponseScreen} />
+              <Stack.Screen name="WelcomeUser" component={WelcomeUserScreen} />
+              <Stack.Screen name="UsernamePicker" component={UsernamePickerScreen} />
+              <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
+            </Stack.Navigator>
+          </NavigationContainer>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
+
+  // User needs to complete username
+  if (currentScreen === 'needsUsername') {
+    return (
+      <ThemeProvider>
+        <AuthProvider>
+          <NavigationContainer onReady={onReady}>
+            <StatusBar barStyle="light-content" />
+            <Stack.Navigator 
+              screenOptions={{ 
+                headerShown: false,
+                animation: 'slide_from_right'
+              }}
+              initialRouteName="UsernamePicker"
+            >
+              <Stack.Screen name="UsernamePicker" component={UsernamePickerScreen} />
+              <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
+              <Stack.Screen name="Tabs" component={TabNavigator} />
+              {/* Add other screens as needed */}
+            </Stack.Navigator>
+          </NavigationContainer>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+  }
+
+  // Default: show authentication flow
   return (
     <ThemeProvider>
       <AuthProvider>
@@ -86,7 +261,7 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
             <Stack.Screen name="UsernamePicker" component={UsernamePickerScreen} />
             <Stack.Screen name="PhoneVerification" component={PhoneVerificationScreen} />
             
-            {/* Music App Tabs - After authentication */}
+            {/* These screens accessible after auth */}
             <Stack.Screen name="Tabs" component={TabNavigator} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
             <Stack.Screen name="Game" component={GameScreen} />
@@ -102,25 +277,6 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="Explore" component={ExploreScreen} />
             <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
-            
-            {/* Backend Engine Screens - Accessible from music app profile */}
-            <Stack.Screen name="BackendHome" component={Home} />
-            <Stack.Screen name="Tuneo" component={Tuneo} />
-            <Stack.Screen name="FlappyBird" component={FlappyBird} />
-            <Stack.Screen name="TestSDK" component={TestGameLauncher} />
-            <Stack.Screen 
-              name="Settings" 
-              component={Settings} 
-              options={() => ({
-                headerTitleStyle: { color: Colors.primary },
-                headerStyle: { backgroundColor: Colors.bgTitle },
-                headerTintColor: Colors.primary,
-                headerShadowVisible: false,
-                ...(Platform.OS === "ios"
-                  ? { presentation: "fullScreenModal", headerRight: () => <CloseButton /> }
-                  : {}),
-              })}
-            />
           </Stack.Navigator>
         </NavigationContainer>
       </AuthProvider>

@@ -49,6 +49,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       const userData = await AsyncStorage.getItem('user_data');
       
       console.log('🔑 Stored token exists:', !!storedToken);
+      console.log('📄 Stored user data exists:', !!userData);
       
       if (storedToken && userData) {
         try {
@@ -84,6 +85,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = async () => {
     try {
       console.log('=================== Starting Logout ===================');
+      console.log('🚨 LOGOUT CALLED - Stack trace:');
+      console.trace('Logout called from:');
       
       // Clear state
       setToken('');
