@@ -5,6 +5,7 @@ import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useGlobalPitchDetection } from "@/hooks/useGlobalPitchDetection"
 import { NOTE_FREQUENCIES } from "@/utils/noteParser"
+import { handleGameExit } from "../../../utils/gameNavigation"
 
 // Create system font
 const systemFont = matchFont({
@@ -276,10 +277,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   // Handle game end callback
   const handleGameEnd = useCallback(() => {
     setGameState('gameOver')
-    // Defer the callback to avoid setState during render
-    if (onGameEnd) {
-      setTimeout(() => onGameEnd(score), 0)
-    }
+    // Don't call external onGameEnd callback to avoid popup
+    // Keep game over handling internal
   }, [score, onGameEnd])
   
   // Game loop
@@ -502,7 +501,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         {/* Back button */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate('Home' as any)}
+          onPress={() => handleGameExit(navigation)}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
@@ -533,7 +532,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         {/* Back button */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate('Home' as any)}
+          onPress={() => handleGameExit(navigation)}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
