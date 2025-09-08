@@ -24,12 +24,14 @@ export const API_ENDPOINTS = {
     REFRESH_TOKEN: '/auth/refresh',
     LOGOUT: '/auth/logout',
     ME: '/auth/me',
+    USER: (userId: string) => `/auth/user/${userId}`,
   },
   CONTENT: {
     GET_UPLOAD_URL: '/content/get-upload-url',
     CREATE_WITH_S3_KEY: '/content/create-with-s3-key',
     LIST: '/content',
     PUBLIC: '/content/public',
+    USER: (userId: string) => `/content/user/${userId}`,
     DETAILS: (id: string) => `/content/${id}`,
   },
   USER: {

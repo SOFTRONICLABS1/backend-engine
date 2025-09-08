@@ -217,6 +217,7 @@ export default function UserProfileScreen({ route, navigation }) {
         onFollowToggle={handleFollowToggle}
         onMessage={handleMessage}
         navigation={navigation}
+        userId={userId} // Pass userId for navigation
         totalContent={user?.total_content_created || 0}
         yearsOfExperience={user?.years_of_experience || 0}
         location={user?.location || ''}

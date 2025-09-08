@@ -109,24 +109,32 @@ class ContentService {
   }
 
   /**
-   * Get user's content
+   * Get specific user's content
+   * @param {string} userId - User ID to fetch content for
    * @param {number} page - Page number (default: 1)
    * @param {number} limit - Items per page (default: 20)
    * @returns {Promise} User's content list
    */
-  async getUserContent(page = 1, limit = 20) {
+  async getUserContent(userId: string, page = 1, limit = 20) {
     try {
       console.log('=================== Fetching User Content ===================');
+      console.log('🔍 User ID:', userId);
+      console.log('📄 Page:', page, 'Limit:', limit);
       
-      // Use the public endpoint with per_page parameter
-      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.PUBLIC}?page=${page}&per_page=${limit}`);
+      // Use the user-specific content endpoint
+      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.USER(userId)}?page=${page}&per_page=${limit}`);
       
       console.log('✅ User content fetched successfully');
+      console.log('📊 Total content items:', response.data?.contents?.length || 0);
+      console.log('📋 Content data:', JSON.stringify(response.data, null, 2));
       console.log('=================== User Content Fetched ===================');
       
       return response.data;
     } catch (error: any) {
-      console.error('Failed to fetch user content:', error);
+      console.error('❌ Failed to fetch user content:', error);
+      if (error.response) {
+        console.error('❌ API Error Response:', JSON.stringify(error.response.data, null, 2));
+      }
       throw error;
     }
   }
