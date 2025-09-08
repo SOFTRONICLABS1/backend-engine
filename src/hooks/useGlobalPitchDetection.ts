@@ -50,6 +50,8 @@ export const useGlobalPitchDetection = (options: UseGlobalPitchDetectionOptions 
     requestPermission: microphoneData.requestPermission,
     startStreaming: microphoneData.startStreaming,
     stopStreaming: microphoneData.stopStreaming,
+    reinitialize: microphoneData.reinitialize,
+    restartStream: microphoneData.restartStream,
   };
 };
 

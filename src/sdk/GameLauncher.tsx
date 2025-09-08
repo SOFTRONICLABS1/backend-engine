@@ -1,6 +1,7 @@
-import React from 'react'
+import React, { useEffect } from 'react'
 import { View, Text, StyleSheet } from 'react-native'
 import { GameRegistry } from './GameRegistry'
+import { reinitializeMicrophone } from '../hooks/useGlobalMicrophoneManager'
 
 // Game Payload Interface
 export interface GamePayload {
@@ -35,6 +36,25 @@ export const GameLauncher: React.FC<GameLauncherProps> = ({
   onGameEnd,
   onError
 }) => {
+  // Reinitialize microphone when launching any game
+  useEffect(() => {
+    const initializeMicrophoneForGame = async () => {
+      console.log('🎤 GameLauncher: Reinitializing microphone for game launch...');
+      try {
+        const success = await reinitializeMicrophone();
+        if (success) {
+          console.log('🎤 GameLauncher: Microphone successfully initialized');
+        } else {
+          console.warn('🎤 GameLauncher: Failed to initialize microphone');
+        }
+      } catch (error) {
+        console.error('🎤 GameLauncher: Error initializing microphone:', error);
+      }
+    };
+    
+    initializeMicrophoneForGame();
+  }, []);
+
   // Validate payload
   if (!payload || !payload.gameId || !payload.userId) {
     const errorMsg = 'Invalid payload: missing gameId or userId'

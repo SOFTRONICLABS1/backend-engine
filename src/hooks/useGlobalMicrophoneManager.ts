@@ -229,6 +229,62 @@ export const initializeGlobalMicrophone = async () => {
   notifyPermissionListeners();
 };
 
+// Reinitialize microphone system (for when navigating to game screens)
+export const reinitializeMicrophone = async (): Promise<boolean> => {
+  console.log('🎤 Reinitializing microphone system...');
+  
+  try {
+    // First stop existing stream if running
+    if (globalMicrophoneState.isStreaming) {
+      await stopMicrophoneStream();
+    }
+    
+    // Check current permission status
+    const permission = await AudioModule.getRecordingPermissionsAsync();
+    if (permission.granted) {
+      globalMicrophoneState.permissionStatus = 'granted';
+      await startMicrophoneStream();
+      notifyPermissionListeners();
+      console.log('🎤 Microphone successfully reinitialized');
+      return true;
+    } else {
+      // Request permission again
+      const newStatus = await requestMicrophonePermission();
+      console.log('🎤 Microphone permission status after reinit:', newStatus);
+      return newStatus === 'granted';
+    }
+  } catch (error) {
+    console.error('🎤 Error reinitializing microphone:', error);
+    return false;
+  }
+};
+
+// Force restart microphone stream (for when stream gets stuck)
+export const restartMicrophoneStream = async (): Promise<boolean> => {
+  console.log('🎤 Restarting microphone stream...');
+  
+  try {
+    // Stop current stream
+    await stopMicrophoneStream();
+    
+    // Wait a bit for cleanup
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Start again if we have permission
+    if (globalMicrophoneState.permissionStatus === 'granted') {
+      await startMicrophoneStream();
+      console.log('🎤 Microphone stream successfully restarted');
+      return true;
+    } else {
+      console.log('🎤 Cannot restart stream - no permission');
+      return false;
+    }
+  } catch (error) {
+    console.error('🎤 Error restarting microphone stream:', error);
+    return false;
+  }
+};
+
 // Hook for components to use the global microphone system
 export const useGlobalMicrophone = () => {
   const [pitchData, setPitchData] = useState<PitchData>(globalMicrophoneState.pitchData);
@@ -279,6 +335,14 @@ export const useGlobalMicrophone = () => {
   // Check if data is fresh (within last 2 seconds)
   const isDataFresh = (Date.now() - pitchData.timestamp) < 2000;
 
+  const reinitialize = useCallback(async () => {
+    return await reinitializeMicrophone();
+  }, []);
+
+  const restartStream = useCallback(async () => {
+    return await restartMicrophoneStream();
+  }, []);
+
   return {
     // Pitch data
     pitch: pitchData.pitch,
@@ -297,6 +361,8 @@ export const useGlobalMicrophone = () => {
     requestPermission,
     startStreaming,
     stopStreaming,
+    reinitialize,
+    restartStream,
     
     // Legacy compatibility
     micAccess: permissionStatus,
