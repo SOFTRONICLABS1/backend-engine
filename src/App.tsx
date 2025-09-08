@@ -28,13 +28,13 @@ export function App() {
   // You can switch between the original backend-engine navigation and the new music app navigation
   // Set USE_MUSIC_APP to true to enable the full music app experience with authentication
   // Set to false to use the original backend-engine interface
-  const USE_MUSIC_APP = false;
+  const USE_MUSIC_APP = true;
 
   if (USE_MUSIC_APP) {
     // Use the enhanced music app navigation with authentication and full feature set
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <MusicAppNavigation />
+        <MusicAppNavigation onReady={() => SplashScreen.hideAsync()} />
       </GestureHandlerRootView>
     )
   } else {

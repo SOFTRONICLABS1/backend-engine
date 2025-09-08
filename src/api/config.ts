@@ -29,6 +29,7 @@ export const API_ENDPOINTS = {
     GET_UPLOAD_URL: '/content/get-upload-url',
     CREATE_WITH_S3_KEY: '/content/create-with-s3-key',
     LIST: '/content',
+    PUBLIC: '/content/public',
     DETAILS: (id: string) => `/content/${id}`,
   },
   USER: {
@@ -44,7 +45,7 @@ export const API_ENDPOINTS = {
   },
   GAMES: {
     LIST: '/games/',
-    CONTENT_GAMES: (contentId: string) => `/games/content/${contentId}`,
+    CONTENT_GAMES: (contentId: string) => `/content/${contentId}/games`,
     GAME_DETAILS: (id: string) => `/games/${id}`,
     SUBMIT_SCORE: (id: string) => `/games/${id}/score`,
     LEADERBOARD: '/games/leaderboard',

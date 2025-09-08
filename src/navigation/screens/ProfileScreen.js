@@ -481,6 +481,14 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={[styles.menuText, { color: theme.text }]}>Settings</Text>
               </TouchableOpacity>
               
+              <TouchableOpacity style={styles.menuItem} onPress={() => {
+                setShowMenu(false);
+                navigation.navigate('BackendHome');
+              }}>
+                <IconSymbol name="gamecontroller.fill" size={20} color="#4ECDC4" />
+                <Text style={[styles.menuText, { color: theme.text }]}>Musical Training & Games</Text>
+              </TouchableOpacity>
+              
               <TouchableOpacity style={styles.menuItem} onPress={handleSupport}>
                 <IconSymbol name="lightbulb.fill" size={20} color={theme.primary} />
                 <Text style={[styles.menuText, { color: theme.text }]}>Help & Support</Text>

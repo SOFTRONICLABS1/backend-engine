@@ -56,8 +56,9 @@ export const requestMicrophonePermission = async (): Promise<MicrophonePermissio
     globalMicrophoneState.permissionStatus = 'requesting';
     notifyPermissionListeners();
 
-    const permission = await AudioModule.requestRecordingPermissionsAsync();
-    const hasPermission = permission.granted;
+    // Use our native MicrophoneStream module for permission request
+    const permissionResult = await MicrophoneStreamModule.requestPermission();
+    const hasPermission = permissionResult === 'granted';
     
     if (hasPermission) {
       globalMicrophoneState.permissionStatus = 'granted';

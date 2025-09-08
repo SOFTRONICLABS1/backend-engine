@@ -17,7 +17,7 @@ class GamesService {
     try {
       console.log('=================== Fetching All Games ===================');
       
-      const response = await apiClient.get(`${API_ENDPOINTS.GAMES.LIST}?page=${page}&limit=${limit}`);
+      const response = await apiClient.get(`${API_ENDPOINTS.GAMES.LIST}?page=${page}&per_page=${limit}`);
       
       console.log('✅ All games fetched successfully');
       console.log('=================== All Games Fetched ===================');
@@ -27,6 +27,16 @@ class GamesService {
       console.error('Failed to fetch games:', error);
       throw error;
     }
+  }
+
+  /**
+   * Get list of all games (alias for getAllGames - for compatibility)
+   * @param {number} page - Page number (default: 1)
+   * @param {number} limit - Items per page (default: 20)
+   * @returns {Promise} List of games
+   */
+  async getGames(page = 1, limit = 20) {
+    return this.getAllGames(page, limit);
   }
 
   /**
@@ -40,7 +50,7 @@ class GamesService {
     try {
       console.log('=================== Fetching Content Games ===================');
       
-      const response = await apiClient.get(`${API_ENDPOINTS.GAMES.CONTENT_GAMES(contentId)}?page=${page}&limit=${limit}`);
+      const response = await apiClient.get(`${API_ENDPOINTS.GAMES.CONTENT_GAMES(contentId)}?page=${page}&per_page=${limit}`);
       
       console.log('✅ Content games fetched successfully');
       console.log('=================== Content Games Fetched ===================');
@@ -105,7 +115,7 @@ class GamesService {
     try {
       console.log('=================== Fetching Game Leaderboard ===================');
       
-      let url = `${API_ENDPOINTS.GAMES.LEADERBOARD}?limit=${limit}`;
+      let url = `${API_ENDPOINTS.GAMES.LEADERBOARD}?per_page=${limit}`;
       if (gameId) {
         url += `&game_id=${gameId}`;
       }
