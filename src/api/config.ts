@@ -45,7 +45,7 @@ export const API_ENDPOINTS = {
   },
   GAMES: {
     LIST: '/games/',
-    CONTENT_GAMES: (contentId: string) => `/games/content/${contentId}`,
+    CONTENT_GAMES: (contentId: string) => `/content/${contentId}/games`,
     GAME_DETAILS: (id: string) => `/games/${id}`,
     SUBMIT_SCORE: (id: string) => `/games/${id}/score`,
     LEADERBOARD: '/games/leaderboard',
