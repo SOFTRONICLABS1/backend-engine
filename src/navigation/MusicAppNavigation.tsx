@@ -39,6 +39,7 @@ import ExploreScreen from './screens/ExploreScreen';
 import MusicHomeScreen from './screens/MusicHomeScreen';
 import FollowersScreen from './screens/FollowersScreen';
 import FollowingScreen from './screens/FollowingScreen';
+import SingleContentViewerScreen from './screens/SingleContentViewerScreen';
 import TabNavigator from './TabNavigator';
 
 import Colors from '../Colors';
@@ -228,6 +229,7 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
               <Stack.Screen name="Followers" component={FollowersScreen} />
               <Stack.Screen name="Following" component={FollowingScreen} />
               <Stack.Screen name="Explore" component={ExploreScreen} />
+              <Stack.Screen name="SingleContentViewer" component={SingleContentViewerScreen} options={{ headerShown: false }} />
               <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
               
               {/* Backend Engine Screens */}
@@ -322,6 +324,7 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
             <Stack.Screen name="GamePayload" component={GamePayloadScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="Explore" component={ExploreScreen} />
+            <Stack.Screen name="SingleContentViewer" component={SingleContentViewerScreen} options={{ headerShown: false }} />
             <Stack.Screen name="MusicHome" component={MusicHomeScreen} />
           </Stack.Navigator>
         </NavigationContainer>

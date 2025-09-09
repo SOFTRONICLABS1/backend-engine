@@ -14,7 +14,8 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import searchService from '../../api/services/searchService';
-import authService from '../../api/services/authService';
+import socialService from '../../api/services/socialService';
+import userService from '../../api/services/userService';
 import { navigateToUserProfile } from '../../utils/navigationHelpers';
 
 // Mock data for search results
@@ -88,9 +89,65 @@ export default function ExploreScreen({ navigation }) {
       // Call real search API
       const results = await searchService.search(text.trim(), 1, 20);
       
+      // Enhance user results with follower counts
+      let enhancedUsers = results.users || [];
+      if (enhancedUsers.length > 0) {
+        try {
+          // Fetch follower counts for each user in parallel
+          const userPromises = enhancedUsers.map(async (user) => {
+            try {
+              const followersResult = await socialService.getUserFollowers(user.id, 1, 1);
+              const followerCount = followersResult?.data?.total || 0;
+              return {
+                ...user,
+                total_subscribers: followerCount
+              };
+            } catch (error) {
+              console.log(`Failed to fetch follower count for user ${user.id}:`, error);
+              // Return user without follower count if fetch fails
+              return user;
+            }
+          });
+          
+          enhancedUsers = await Promise.all(userPromises);
+        } catch (error) {
+          console.log('Failed to enhance users with follower counts:', error);
+          // Continue with original users if enhancement fails
+        }
+      }
+
+      // Enhance content results with user information
+      let enhancedContent = results.content || [];
+      if (enhancedContent.length > 0) {
+        try {
+          // Fetch user details for each content item
+          const contentPromises = enhancedContent.map(async (content) => {
+            try {
+              if (content.user_id) {
+                const userDetails = await userService.getUserById(content.user_id);
+                return {
+                  ...content,
+                  user: userDetails
+                };
+              }
+              return content;
+            } catch (error) {
+              console.log(`Failed to fetch user details for content ${content.id}:`, error);
+              // Return content without user details if fetch fails
+              return content;
+            }
+          });
+          
+          enhancedContent = await Promise.all(contentPromises);
+        } catch (error) {
+          console.log('Failed to enhance content with user details:', error);
+          // Continue with original content if enhancement fails
+        }
+      }
+      
       setSearchResults({
-        users: results.users || [],
-        content: results.content || [],
+        users: enhancedUsers,
+        content: enhancedContent,
         tags: mockTags.filter(tag => 
           tag.name.toLowerCase().includes(text.toLowerCase())
         ), // For now using mock tags since API doesn't return tags
@@ -185,7 +242,8 @@ export default function ExploreScreen({ navigation }) {
   const renderAccountItem = ({ item }) => {
     const avatarUrl = item.profile_image_url || `https://picsum.photos/50/50?random=${item.id}`;
     const displayName = item.signup_username || item.username;
-    const followerCount = item.total_subscribers || 0;
+    // Check multiple possible field names for follower count
+    const followerCount = item.total_subscribers || item.followers_count || item.follower_count || item.subscribers_count || 0;
     
     return (
       <TouchableOpacity 
@@ -200,7 +258,10 @@ export default function ExploreScreen({ navigation }) {
           </View>
           <Text style={[styles.accountUsername, { color: theme.textSecondary }]}>@{item.username}</Text>
           <Text style={[styles.accountFollowers, { color: theme.textSecondary }]}>
-            {followerCount > 1000 ? `${(followerCount/1000).toFixed(1)}K` : followerCount} followers
+            {followerCount > 1000 
+              ? `${(followerCount/1000).toFixed(1)}K followers` 
+              : `${followerCount} ${followerCount === 1 ? 'follower' : 'followers'}`
+            }
           </Text>
         </View>
       </TouchableOpacity>
@@ -208,16 +269,21 @@ export default function ExploreScreen({ navigation }) {
   };
   
   const renderMusicVideoItem = ({ item }) => {
-    const thumbnailUrl = `https://picsum.photos/200/200?random=${item.id}`;
+    const thumbnailUrl = item.thumbnail_url || `https://picsum.photos/200/200?random=${item.id}`;
     const playCount = item.play_count || 0;
     const isVideo = item.media_type === 'video';
+    const creator = item.user ? (item.user.signup_username || item.user.username) : 'Unknown';
+    const creatorUsername = item.user ? item.user.username : 'unknown';
     
     return (
       <TouchableOpacity 
         style={styles.musicVideoItem}
         onPress={() => {
-          console.log('Navigate to content:', item.title);
-          navigation.navigate('ContentViewer', { contentId: item.id });
+          console.log('Navigate to content:', item.title, 'by', creator);
+          // Navigate to single content viewer - shows only this content
+          navigation.navigate('SingleContentViewer', { 
+            contentId: item.id
+          });
         }}
       >
         <View style={styles.musicVideoThumbnailContainer}>
@@ -231,7 +297,7 @@ export default function ExploreScreen({ navigation }) {
             {item.title}
           </Text>
           <Text style={[styles.musicVideoCreator, { color: theme.textSecondary }]} numberOfLines={1}>
-            {item.description}
+            @{creatorUsername} • {creator}
           </Text>
           <View style={styles.musicVideoStats}>
             <Text style={[styles.musicVideoStat, { color: theme.textSecondary }]}>

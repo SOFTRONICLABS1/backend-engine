@@ -32,21 +32,27 @@ export default function TabNavigator() {
         name="Home"
         component={MusicHomeScreen}
         options={{
-          tabBarIcon: ({ color }) => <IconSymbol name="house.fill" size={45} color={color} />,
+          tabBarIcon: ({ color }) => (
+            <IconSymbol 
+              name="house.fill" 
+              size={26} 
+              color={color} 
+            />
+          ),
         }}
       />
       <Tab.Screen
         name="Explore"
         component={ExploreScreen}
         options={{
-          tabBarIcon: ({ color }) => <IconSymbol name="magnifyingglass" size={28} color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol name="magnifyingglass" size={26} color={color} />,
         }}
       />
       <Tab.Screen
         name="Profile"
         component={ProfileScreen}
         options={{
-          tabBarIcon: ({ color }) => <IconSymbol name="person.fill" size={28} color={color} />,
+          tabBarIcon: ({ color }) => <IconSymbol name="person.fill" size={26} color={color} />,
         }}
       />
     </Tab.Navigator>
