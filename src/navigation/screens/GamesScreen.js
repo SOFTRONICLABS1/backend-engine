@@ -29,6 +29,8 @@ export default function GamesScreen() {
   const [isLoadingAll, setIsLoadingAll] = useState(true);
   const [errorSuggested, setErrorSuggested] = useState(null);
   const [errorAll, setErrorAll] = useState(null);
+  const [isMicrophoneLoading, setIsMicrophoneLoading] = useState(true);
+  const [microphoneError, setMicrophoneError] = useState(null);
 
   // Fetch games data on component mount
   useEffect(() => {
@@ -74,11 +76,16 @@ export default function GamesScreen() {
   useEffect(() => {
     const initializeMicrophone = async () => {
       try {
+        setIsMicrophoneLoading(true);
+        setMicrophoneError(null);
         console.log('🎤 GamesScreen: Initializing microphone for games access...');
         await initializeGlobalMicrophone();
         console.log('🎤 GamesScreen: Microphone system initialized successfully');
+        setIsMicrophoneLoading(false);
       } catch (error) {
         console.error('🎤 GamesScreen: Failed to initialize microphone system:', error);
+        setMicrophoneError('Failed to access microphone. Please check permissions.');
+        setIsMicrophoneLoading(false);
       }
     };
 
@@ -86,6 +93,42 @@ export default function GamesScreen() {
   }, []);
 
   const handleGamePress = (game) => {
+    if (isMicrophoneLoading) {
+      Alert.alert(
+        'Microphone Loading',
+        'Please wait while microphone access is being initialized...',
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
+
+    if (microphoneError) {
+      Alert.alert(
+        'Microphone Error',
+        microphoneError,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Retry', 
+            style: 'default',
+            onPress: () => {
+              setIsMicrophoneLoading(true);
+              setMicrophoneError(null);
+              initializeGlobalMicrophone()
+                .then(() => {
+                  setIsMicrophoneLoading(false);
+                })
+                .catch((error) => {
+                  setMicrophoneError('Failed to access microphone. Please check permissions.');
+                  setIsMicrophoneLoading(false);
+                });
+            }
+          }
+        ]
+      );
+      return;
+    }
+
     console.log('Game selected:', game.title, 'for content:', contentTitle);
     
     // Navigate to GamePayload screen to show payload data
@@ -153,6 +196,16 @@ export default function GamesScreen() {
         <Text style={[styles.headerTitle, { color: theme.text }]}>Games</Text>
         <View style={styles.headerPlaceholder} />
       </View>
+
+      {/* Microphone Loading Indicator */}
+      {isMicrophoneLoading && (
+        <View style={[styles.microphoneLoadingContainer, { backgroundColor: theme.background }]}>
+          <ActivityIndicator size="large" color={theme.primary} />
+          <Text style={[styles.microphoneLoadingText, { color: theme.textSecondary }]}>
+            🎤 Accessing microphone for games...
+          </Text>
+        </View>
+      )}
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>        
         {/* User Suggested Games Section */}
@@ -344,5 +397,18 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 14,
     fontWeight: '600',
+  },
+  microphoneLoadingContainer: {
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  microphoneLoadingText: {
+    marginTop: 12,
+    fontSize: 16,
+    textAlign: 'center',
+    fontWeight: '500',
   },
 });
