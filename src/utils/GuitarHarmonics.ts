@@ -1,125 +1,140 @@
-import { NOTE_FREQUENCIES } from '../constants/notes';
+import { NOTE_FREQUENCIES } from './noteParser';
+import { Audio } from 'expo-av';
+import { encode as btoa } from 'base-64';
 
-export class GuitarHarmonics {
-  private audioContext: AudioContext;
-  private currentOscillators: OscillatorNode[] = [];
-  private currentGainNodes: GainNode[] = [];
-  private masterGain: GainNode;
+// WAV tone generator for harmonics
+function generateHarmonicWavDataUri(frequency: number, durationMs: number, sampleRate = 44100, volume = 0.3) {
+  const durationSeconds = Math.max(0.03, durationMs / 1000);
+  const totalSamples = Math.floor(sampleRate * durationSeconds);
+  const numChannels = 1;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = totalSamples * blockAlign;
+  const buffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(buffer);
+  let offset = 0;
+  function writeString(s: string) { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)); }
 
-  constructor() {
-    this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-    this.masterGain = this.audioContext.createGain();
-    this.masterGain.gain.value = 0.2; // Soothing master volume
-    this.masterGain.connect(this.audioContext.destination);
+  writeString("RIFF");
+  view.setUint32(offset, 36 + dataSize, true); offset += 4;
+  writeString("WAVE");
+  writeString("fmt ");
+  view.setUint32(offset, 16, true); offset += 4;
+  view.setUint16(offset, 1, true); offset += 2;
+  view.setUint16(offset, numChannels, true); offset += 2;
+  view.setUint32(offset, sampleRate, true); offset += 4;
+  view.setUint32(offset, byteRate, true); offset += 4;
+  view.setUint16(offset, blockAlign, true); offset += 2;
+  view.setUint16(offset, bytesPerSample * 8, true); offset += 2;
+  writeString("data");
+  view.setUint32(offset, dataSize, true); offset += 4;
+
+  // Generate guitar-like harmonic tones
+  for (let i = 0; i < totalSamples; i++) {
+    const t = i / sampleRate;
+    
+    // Create multiple harmonics for rich guitar-like sound
+    const fundamental = Math.sin(2 * Math.PI * frequency * t);
+    const harmonic2 = 0.4 * Math.sin(2 * Math.PI * frequency * 2 * t);
+    const harmonic3 = 0.2 * Math.sin(2 * Math.PI * frequency * 3 * t);
+    const harmonic5 = 0.1 * Math.sin(2 * Math.PI * frequency * 5 * t);
+    const subharmonic = 0.15 * Math.sin(2 * Math.PI * frequency * 0.5 * t);
+    
+    let sample = (fundamental + harmonic2 + harmonic3 + harmonic5 + subharmonic) * volume;
+    
+    // Apply envelope (attack, sustain, release)
+    const attack = Math.min(0.05, durationSeconds * 0.15);
+    const release = Math.min(0.1, durationSeconds * 0.3);
+    let amp = 1.0;
+    
+    if (t < attack) {
+      amp = t / attack;
+    } else if (t > durationSeconds - release) {
+      amp = Math.max(0, (durationSeconds - t) / release);
+    }
+    
+    sample *= amp;
+    
+    // Add subtle vibrato for more musical feel
+    const vibrato = 1 + 0.02 * Math.sin(2 * Math.PI * 4 * t);
+    sample *= vibrato;
+    
+    const intSample = Math.max(-1, Math.min(1, sample)) * 0x7FFF;
+    view.setInt16(offset, Math.floor(intSample), true);
+    offset += 2;
   }
 
-  private createGuitarHarmonic(frequency: number, duration: number): void {
-    const now = this.audioContext.currentTime;
-    
-    // Create multiple harmonics for soothing, melodic sound
-    const harmonicRatios = [
-      { ratio: 1, gain: 0.6 },     // Fundamental (stronger for melody)
-      { ratio: 2, gain: 0.25 },    // Octave (softer)
-      { ratio: 3, gain: 0.1 },     // Fifth above octave (subtle)
-      { ratio: 4, gain: 0.05 },    // Two octaves (very soft)
-      { ratio: 0.5, gain: 0.15 }   // Sub-octave (adds warmth)
-    ];
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode.apply(null, Array.prototype.slice.call(chunk));
+  }
+  const base64 = btoa(binary);
+  return `data:audio/wav;base64,${base64}`;
+}
 
-    harmonicRatios.forEach(harmonic => {
-      // Create oscillator for each harmonic
-      const oscillator = this.audioContext.createOscillator();
-      oscillator.type = 'sine';
-      oscillator.frequency.value = frequency * harmonic.ratio;
+export class GuitarHarmonics {
+  private activeSounds: Audio.Sound[] = [];
 
-      // Create gain node for this harmonic
-      const gainNode = this.audioContext.createGain();
-      
-      // Soothing envelope (gentle attack, sustained melody)
-      gainNode.gain.setValueAtTime(0, now);
-      gainNode.gain.linearRampToValueAtTime(harmonic.gain, now + 0.1); // Gentle attack
-      gainNode.gain.exponentialRampToValueAtTime(harmonic.gain * 0.8, now + 0.2); // Minimal initial decay
-      gainNode.gain.exponentialRampToValueAtTime(harmonic.gain * 0.6, now + duration * 0.7 / 1000); // Long sustain
-      gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration / 1000 + 0.2); // Gentle fade out
+  constructor() {
+    console.log('🎸 GuitarHarmonics: Initialized with expo-av backend');
+  }
 
-      // Add subtle vibrato for soothing effect
-      const vibrato = this.audioContext.createOscillator();
-      vibrato.frequency.value = 3; // Slower 3Hz vibrato for soothing effect
-      const vibratoGain = this.audioContext.createGain();
-      vibratoGain.gain.value = frequency * harmonic.ratio * 0.005; // 0.5% pitch variation (subtler)
+  private async playDataUriWithExpo(dataUri: string): Promise<void> {
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: dataUri }, { shouldPlay: true });
       
-      vibrato.connect(vibratoGain);
-      vibratoGain.connect(oscillator.frequency);
+      // Track the sound for cleanup
+      this.activeSounds.push(sound);
       
-      // Connect the oscillator through gain to master
-      oscillator.connect(gainNode);
-      gainNode.connect(this.masterGain);
-      
-      // Start and stop
-      oscillator.start(now);
-      vibrato.start(now);
-      oscillator.stop(now + duration / 1000 + 0.4); // Extended for gentle fade
-      vibrato.stop(now + duration / 1000 + 0.4);
-      
-      // Store references for cleanup
-      this.currentOscillators.push(oscillator, vibrato);
-      this.currentGainNodes.push(gainNode, vibratoGain);
-    });
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status || status.isLoaded === false) return;
+        if (status.didJustFinish) {
+          try { 
+            sound.unloadAsync();
+            // Remove from active sounds
+            const index = this.activeSounds.indexOf(sound);
+            if (index > -1) {
+              this.activeSounds.splice(index, 1);
+            }
+          } catch {}
+        }
+      });
+    } catch (e) { 
+      console.warn('🎸 GuitarHarmonics: expo-av playback error', e);
+    }
   }
 
   playNote(note: string, duration: number): void {
+    console.log(`🎸 GuitarHarmonics: Playing note ${note} (${duration}ms)`);
     const frequency = NOTE_FREQUENCIES[note];
     if (!frequency) {
-      console.warn(`Note ${note} not found in frequencies`);
+      console.warn(`🎸 GuitarHarmonics: Note ${note} not found in frequencies`);
       return;
     }
-
-    this.createGuitarHarmonic(frequency, duration);
+    console.log(`🎸 GuitarHarmonics: Note ${note} -> ${frequency}Hz`);
+    
+    try {
+      const dataUri = generateHarmonicWavDataUri(frequency, duration);
+      this.playDataUriWithExpo(dataUri);
+    } catch (error) {
+      console.warn('🎸 GuitarHarmonics: Error generating harmonic tone:', error);
+    }
   }
 
   stopAll(): void {
-    const now = this.audioContext.currentTime;
-    
-    // Fade out all current sounds
-    this.currentGainNodes.forEach(gainNode => {
-      if (gainNode.gain) {
-        gainNode.gain.cancelScheduledValues(now);
-        gainNode.gain.setValueAtTime(gainNode.gain.value, now);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    console.log('🎸 GuitarHarmonics: Stopping all sounds');
+    this.activeSounds.forEach(sound => {
+      try {
+        sound.stopAsync();
+        sound.unloadAsync();
+      } catch (error) {
+        console.warn('🎸 GuitarHarmonics: Error stopping sound:', error);
       }
     });
-
-    // Clean up after fade out
-    setTimeout(() => {
-      this.currentOscillators.forEach(osc => {
-        try {
-          osc.stop();
-          osc.disconnect();
-        } catch (e) {
-          // Oscillator might have already stopped
-        }
-      });
-      
-      this.currentGainNodes.forEach(gain => {
-        try {
-          gain.disconnect();
-        } catch (e) {
-          // Might already be disconnected
-        }
-      });
-      
-      this.currentOscillators = [];
-      this.currentGainNodes = [];
-    }, 150);
-  }
-
-  setVolume(volume: number): void {
-    // Volume should be between 0 and 1
-    this.masterGain.gain.value = Math.max(0, Math.min(1, volume * 0.3));
-  }
-
-  async resume(): Promise<void> {
-    if (this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
-    }
+    this.activeSounds = [];
   }
 }

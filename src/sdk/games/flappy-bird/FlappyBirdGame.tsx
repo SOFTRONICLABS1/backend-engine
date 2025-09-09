@@ -3,9 +3,12 @@ import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform
 import { Canvas, Rect, Circle, Fill, Text as SkiaText, matchFont } from "@shopify/react-native-skia"
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
-import { useGlobalPitchDetection } from "@/hooks/useGlobalPitchDetection"
+import { useGameScreenMicrophone } from "@/hooks/useGameScreenMicrophone"
 import { NOTE_FREQUENCIES } from "@/utils/noteParser"
 import { handleGameExit } from "../../../utils/gameNavigation"
+import { GuitarHarmonics } from "@/utils/GuitarHarmonics"
+import { Audio } from "expo-av"
+import { encode as btoa } from "base-64"
 
 // Create system font
 const systemFont = matchFont({
@@ -22,6 +25,7 @@ const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
 const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
 const NOTE_TEXT_OFFSET_Y = 4 // Fixed Y offset for note text
+const HARMONIC_DISTANCE_THRESHOLD = 20 // Distance in pixels to trigger harmonics
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
@@ -45,6 +49,62 @@ const BPM_SETTINGS = {
   40: { speed: 1, notesPerSec: 2/3 },
   60: { speed: 1.5, notesPerSec: 1 },
   120: { speed: 3, notesPerSec: 2 }
+}
+
+// WAV tone generator for fallback audio
+function generateToneWavDataUri(frequency: number, durationMs: number, sampleRate = 44100, volume = 0.5) {
+  const durationSeconds = Math.max(0.03, durationMs / 1000)
+  const totalSamples = Math.floor(sampleRate * durationSeconds)
+  const numChannels = 1
+  const bytesPerSample = 2
+  const blockAlign = numChannels * bytesPerSample
+  const byteRate = sampleRate * blockAlign
+  const dataSize = totalSamples * blockAlign
+  const buffer = new ArrayBuffer(44 + dataSize)
+  const view = new DataView(buffer)
+  let offset = 0
+  function writeString(s: string) { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)) }
+
+  writeString("RIFF")
+  view.setUint32(offset, 36 + dataSize, true); offset += 4
+  writeString("WAVE")
+  writeString("fmt ")
+  view.setUint32(offset, 16, true); offset += 4
+  view.setUint16(offset, 1, true); offset += 2
+  view.setUint16(offset, numChannels, true); offset += 2
+  view.setUint32(offset, sampleRate, true); offset += 4
+  view.setUint32(offset, byteRate, true); offset += 4
+  view.setUint16(offset, blockAlign, true); offset += 2
+  view.setUint16(offset, bytesPerSample * 8, true); offset += 2
+  writeString("data")
+  view.setUint32(offset, dataSize, true); offset += 4
+
+  for (let i = 0; i < totalSamples; i++) {
+    const t = i / sampleRate
+    const s1 = Math.sin(2 * Math.PI * frequency * t)
+    const s2 = 0.35 * Math.sin(2 * Math.PI * frequency * 2 * t)
+    const s3 = 0.12 * Math.sin(2 * Math.PI * frequency * 3 * t)
+    let sample = (s1 + s2 + s3) * (volume * 0.9)
+    const attack = Math.min(0.02, durationSeconds * 0.2)
+    const release = Math.min(0.03, durationSeconds * 0.25)
+    let amp = 1.0
+    if (t < attack) amp = t / attack
+    else if (t > durationSeconds - release) amp = Math.max(0, (durationSeconds - t) / release)
+    sample *= amp
+    const intSample = Math.max(-1, Math.min(1, sample)) * 0x7FFF
+    view.setInt16(offset, Math.floor(intSample), true)
+    offset += 2
+  }
+
+  const bytes = new Uint8Array(buffer)
+  let binary = ""
+  const chunkSize = 0x8000
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    binary += String.fromCharCode.apply(null, Array.prototype.slice.call(chunk))
+  }
+  const base64 = btoa(binary)
+  return `data:audio/wav;base64,${base64}`
 }
 
 interface Note {
@@ -95,19 +155,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   const navigation = useNavigation()
   
   
-  // Add error handling for pitch detection hook
-  let pitch = 0, isActive = false, micAccess = 'pending', startStreaming = () => Promise.resolve(), reinitialize = () => Promise.resolve(), restartStream = () => Promise.resolve()
-  try {
-    const pitchData = useGlobalPitchDetection()
-    pitch = pitchData.pitch || 0
-    isActive = pitchData.isActive || false
-    micAccess = pitchData.micAccess || 'pending'
-    startStreaming = pitchData.startStreaming || (() => Promise.resolve())
-    reinitialize = pitchData.reinitialize || (() => Promise.resolve())
-    restartStream = pitchData.restartStream || (() => Promise.resolve())
-  } catch (error) {
-    console.error('Error initializing pitch detection in FlappyBird:', error)
-  }
+  // Use the game screen microphone hook for simplified microphone management
+  const gameScreenMicrophone = useGameScreenMicrophone()
+  const pitch = gameScreenMicrophone.pitch || 0
+  const isActive = gameScreenMicrophone.isActive || false
+  const micAccess = gameScreenMicrophone.micAccess || 'pending'
   
   // Game state
   const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver'>('menu')
@@ -173,36 +225,38 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   
   const [currentNoteIndex, setCurrentNoteIndex] = useState(0)
   
-  // Initialize microphone when component mounts
+  // Initialize harmonics and handle loading state
   useEffect(() => {
-    const initMicrophone = async () => {
-      console.log('🎤 FlappyBirdGame: Initializing microphone system...');
-      try {
-        // Try to reinitialize the microphone system first
-        const success = await reinitialize();
-        if (!success) {
-          console.log('🎤 FlappyBirdGame: Initial reinitialize failed, trying restart stream...');
-          await restartStream();
-        }
-        
-        // Add small delay to ensure microphone is fully ready
-        setTimeout(async () => {
-          if (!isActive) {
-            console.log('🎤 FlappyBirdGame: Microphone still not active, trying startStreaming...');
-            await startStreaming();
-          }
-          // Give it some time for microphone to become active
-          setTimeout(() => {
-            setIsInitializing(false)
-          }, 1000) // Reduced wait time
-        }, 500) // Reduced delay
-      } catch (error) {
-        console.error('Failed to initialize microphone in FlappyBird:', error)
-        setIsInitializing(false) // Don't stay in loading state forever
-      }
+    // Initialize GuitarHarmonics
+    try {
+      guitarHarmonicsRef.current = new GuitarHarmonics()
+    } catch (error) {
+      console.warn('GuitarHarmonics initialization failed:', error)
+      guitarHarmonicsRef.current = null
     }
     
-    initMicrophone()
+    // Set loading to false after a short delay to allow microphone to initialize
+    const timer = setTimeout(() => {
+      setIsInitializing(false)
+    }, 1000)
+    
+    return () => {
+      clearTimeout(timer)
+      
+      // Cleanup harmonic checker
+      if (harmonicCheckRef.current) {
+        cancelAnimationFrame(harmonicCheckRef.current)
+        clearTimeout(harmonicCheckRef.current)
+        harmonicCheckRef.current = null
+      }
+      
+      // Cleanup harmonics on unmount
+      try {
+        guitarHarmonicsRef.current?.stopAll?.()
+      } catch (error) {
+        console.warn('Error stopping harmonics:', error)
+      }
+    }
   }, [])
   
   // Set tolerance based on difficulty (constant for all cycles and notes)
@@ -211,28 +265,62 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
     currentToleranceRef.current = newTolerance
   }, [difficulty])
 
-  // Monitor microphone health and restart if needed
+  // Simple microphone status logging (no automatic restarts)
   useEffect(() => {
-    if (gameState !== 'playing') return;
-    
-    const checkMicrophoneHealth = async () => {
-      if (micAccess === 'granted' && !isActive) {
-        console.log('🎤 FlappyBirdGame: Microphone appears to be stuck, attempting restart...');
-        try {
-          await restartStream();
-        } catch (error) {
-          console.error('🎤 FlappyBirdGame: Failed to restart microphone stream:', error);
-        }
-      }
-    };
-    
-    // Check every 3 seconds during gameplay
-    const healthCheckInterval = setInterval(checkMicrophoneHealth, 3000);
-    
-    return () => {
-      clearInterval(healthCheckInterval);
-    };
+    if (gameState === 'playing') {
+      console.log(`🎤 FlappyBirdGame: Microphone status - Access: ${micAccess}, Active: ${isActive}`);
+    }
   }, [gameState, micAccess, isActive])
+  
+  // Audio playback functions
+  const playDataUriWithExpo = useCallback(async (dataUri: string) => {
+    try {
+      const { sound } = await Audio.Sound.createAsync({ uri: dataUri }, { shouldPlay: true })
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (!status || status.isLoaded === false) return
+        if (status.didJustFinish) {
+          try { sound.unloadAsync() } catch {}
+        }
+      })
+    } catch (e) { 
+      console.warn('expo-av playback error', e) 
+    }
+  }, [])
+
+  const playGuitarHarmonic = useCallback(async (pitchOrFreq: string | number, duration = 300) => {
+    let freq: number
+    if (typeof pitchOrFreq === 'number') freq = pitchOrFreq
+    else freq = NOTE_FREQUENCIES[pitchOrFreq as keyof typeof NOTE_FREQUENCIES] || parseFloat(pitchOrFreq) || 440
+
+    try {
+      if (guitarHarmonicsRef.current && typeof guitarHarmonicsRef.current.playNote === 'function') {
+        let nearest = 'A4'; let md = Infinity
+        for (const [n, f] of Object.entries(NOTE_FREQUENCIES)) {
+          const d = Math.abs((f as number) - freq)
+          if (d < md) { md = d; nearest = n }
+        }
+        try { 
+          guitarHarmonicsRef.current.playNote(nearest, duration)
+          return 
+        } catch {}
+      }
+    } catch {}
+
+    // Generate WAV asynchronously to avoid blocking main thread
+    try {
+      // Use setTimeout to make WAV generation non-blocking
+      setTimeout(() => {
+        try {
+          const dataUri = generateToneWavDataUri(freq, duration)
+          playDataUriWithExpo(dataUri)
+        } catch (e) { 
+          console.warn('WAV generation failed', e) 
+        }
+      }, 0)
+    } catch (e) { 
+      console.warn('Harmonic playback failed', e) 
+    }
+  }, [playDataUriWithExpo])
   
   // Convert frequency to Y position on screen (LINEAR mapping for consistent visual gaps)
   const frequencyToY = useCallback((freq: number) => {
@@ -293,6 +381,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   const isPitchDetectedRef = useRef<boolean>(false)
   const lastPitchTimeRef = useRef<number>(0)
   
+  // Harmonic playback
+  const guitarHarmonicsRef = useRef<GuitarHarmonics | null>(null)
+  const harmonicsPlayedRef = useRef<Set<string>>(new Set())
+  const lastHarmonicTimeRef = useRef<{ [key: string]: number }>({})  
+  
   // Handle bird flying based on pitch detection using centralized pitch data
   useEffect(() => {
     if (gameState !== 'playing' || !isActive) return
@@ -316,7 +409,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
     setGameState('gameOver')
     // Don't call external onGameEnd callback to avoid popup
     // Keep game over handling internal
-  }, [score, onGameEnd])
+  }, [])
   
   // Game loop
   useEffect(() => {
@@ -446,10 +539,89 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         cancelAnimationFrame(gameLoopRef.current)
       }
     }
-  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd])
+  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd, pitch, width])
+  
+  // Harmonic proximity checker (optimized to avoid blocking main thread)
+  const harmonicCheckRef = useRef<number | null>(null)
+  
+  useEffect(() => {
+    if (gameState !== 'playing') {
+      if (harmonicCheckRef.current) {
+        cancelAnimationFrame(harmonicCheckRef.current)
+        harmonicCheckRef.current = null
+      }
+      return
+    }
+    
+    const checkHarmonics = () => {
+      if (gameState !== 'playing' || pipes.length === 0) return
+      
+      try {
+        const now = Date.now()
+        const birdCenterX = bird.x + BIRD_SIZE / 2
+        const birdCenterY = bird.y + BIRD_SIZE / 2
+        
+        pipes.forEach(pipe => {
+          const pipeId = `pipe_${pipe.id}`
+          const pipeCenterX = pipe.x + pipe.width / 2
+          const gapCenterY = (pipe.topHeight + pipe.bottomY) / 2
+          
+          // Calculate distance between bird center and pipe gap center
+          const distanceX = Math.abs(birdCenterX - pipeCenterX)
+          const distanceY = Math.abs(birdCenterY - gapCenterY)
+          const totalDistance = Math.sqrt(distanceX * distanceX + distanceY * distanceY)
+          
+          // Check if bird is within threshold distance
+          if (totalDistance <= HARMONIC_DISTANCE_THRESHOLD) {
+            // Prevent playing the same harmonic too frequently (throttle to once per 500ms per pipe)
+            const lastPlayTime = lastHarmonicTimeRef.current[pipeId] || 0
+            if (now - lastPlayTime > 500) {
+              console.log(`Playing harmonic for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - distance: ${totalDistance.toFixed(1)}px`)
+              // Use setTimeout to avoid blocking the main thread
+              setTimeout(() => {
+                try {
+                  playGuitarHarmonic(pipe.note.frequency, 200) // Play for 200ms
+                } catch (error) {
+                  console.warn('Error playing harmonic:', error)
+                }
+              }, 0)
+              lastHarmonicTimeRef.current[pipeId] = now
+            }
+          }
+        })
+      } catch (error) {
+        console.warn('Error in harmonic check:', error)
+      }
+      
+      // Continue checking but with throttling (every 100ms instead of every frame)
+      if (gameState === 'playing') {
+        harmonicCheckRef.current = setTimeout(() => {
+          requestAnimationFrame(checkHarmonics)
+        }, 100) as any
+      }
+    }
+    
+    // Start the harmonic checker
+    harmonicCheckRef.current = requestAnimationFrame(checkHarmonics)
+    
+    return () => {
+      if (harmonicCheckRef.current) {
+        cancelAnimationFrame(harmonicCheckRef.current)
+        clearTimeout(harmonicCheckRef.current)
+        harmonicCheckRef.current = null
+      }
+    }
+  }, [gameState]) // Only depend on gameState, not bird/pipes to prevent running every frame
   
   // Start game
   const startGame = useCallback(() => {
+    // Clean up any existing harmonic checker
+    if (harmonicCheckRef.current) {
+      cancelAnimationFrame(harmonicCheckRef.current)
+      clearTimeout(harmonicCheckRef.current)
+      harmonicCheckRef.current = null
+    }
+    
     setBird({ x: width * 0.2, y: height / 2, velocity: 0 })
     setPipes([])
     setScore(0)
@@ -457,6 +629,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
     setCurrentNoteIndex(0)
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
+    // Reset harmonic tracking
+    harmonicsPlayedRef.current.clear()
+    lastHarmonicTimeRef.current = {}
     setGameState('playing')
     const now = Date.now()
     lastNoteTime.current = now
@@ -465,6 +640,13 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
   
   // Reset game
   const resetGame = useCallback(() => {
+    // Clean up any existing harmonic checker
+    if (harmonicCheckRef.current) {
+      cancelAnimationFrame(harmonicCheckRef.current)
+      clearTimeout(harmonicCheckRef.current)
+      harmonicCheckRef.current = null
+    }
+    
     setGameState('menu')
     setBird({ x: width * 0.2, y: height / 2, velocity: 0 })
     setPipes([])
@@ -473,6 +655,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
     setCurrentNoteIndex(0)
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
+    // Reset harmonic tracking
+    harmonicsPlayedRef.current.clear()
+    lastHarmonicTimeRef.current = {}
   }, [width, height, difficulty])
   
   // Render game canvas
@@ -523,7 +708,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         {/* Bird placeholder - actual bird is rendered as overlay */}
       </Canvas>
     )
-  }, [gameState, width, height, pipes, bird])
+  }, [gameState, width, height, pipes])
   
   // Show loading screen during initialization
   if (isInitializing) {
@@ -532,7 +717,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         {/* Back button */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => handleGameExit(navigation)}
+          onPress={() => handleGameExit(navigation as any)}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
@@ -551,7 +736,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
         {/* Back button */}
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => handleGameExit(navigation)}
+          onPress={() => handleGameExit(navigation as any)}
         >
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>

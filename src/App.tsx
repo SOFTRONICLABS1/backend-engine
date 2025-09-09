@@ -1,26 +1,12 @@
 import * as React from "react"
-import { useEffect } from "react"
 import { Navigation } from "./navigation"
 import { MusicAppNavigation } from "./navigation/MusicAppNavigation"
 import { GestureHandlerRootView } from "react-native-gesture-handler"
-import { initializeGlobalMicrophone } from "./hooks/useGlobalMicrophoneManager"
 import { ThemeProvider } from "./theme/ThemeContext"
 import { AuthProvider } from "./context/AuthContext"
 
 export function App() {
-  // Initialize global microphone system when app starts
-  useEffect(() => {
-    const initializeMicrophone = async () => {
-      try {
-        await initializeGlobalMicrophone()
-        console.log("Global microphone system initialized")
-      } catch (error) {
-        console.error("Failed to initialize global microphone system:", error)
-      }
-    }
-
-    initializeMicrophone()
-  }, [])
+  // Microphone is now only initialized when accessing games-related screens
 
   // You can switch between the original backend-engine navigation and the new music app navigation
   // Set USE_MUSIC_APP to true to enable the full music app experience with authentication

@@ -9,10 +9,13 @@ import { Audio } from "expo-av"
 import { encode as btoa } from "base-64"
 
 import { useGlobalPitchDetection } from "@/hooks/useGlobalPitchDetection"
+import { useGameScreenMicrophone } from "@/hooks/useGameScreenMicrophone"
 import { useUiStore } from "@/stores/uiStore"
 import RequireMicAccess from "@/components/RequireMicAccess"
 import { GuitarHarmonics } from "@/utils/GuitarHarmonics"
 import { NOTE_FREQUENCIES } from "@/utils/noteParser"
+import DSPModule from "@/../specs/NativeDSPModule"
+import { handleGameExit } from "@/utils/gameNavigation"
 
 // ---------- constants ----------
 const PIXELS_PER_SECOND = 60
@@ -22,6 +25,15 @@ const POINT_LIFETIME_MS = 8000
 const START_OFFSET_MS = 600
 const VISIBLE_MARGIN_PX = 800
 const MIN_NOTE_MS = 20 // minimum note duration to avoid zero-width segments
+
+// Noise reduction parameters (from Tuneo)
+const MIN_FREQ = 60
+const MAX_FREQ = 6000
+const MAX_PITCH_DEV = 0.2
+const THRESHOLD_DEFAULT = 0.15
+const THRESHOLD_NOISY = 0.6
+const RMS_GAP = 1.1
+const ENABLE_FILTER = true
 
 const PIANO_NOTES = [
   "C6","B5","A#5","A5","G#5","G5","F#5","F5","E5","D#5","D5","C#5","C5",
@@ -93,21 +105,23 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
 
-  // pitch detection
+  // microphone access via game screen hook
+  const gameScreenMicrophone = useGameScreenMicrophone()
+  
+  // pitch detection data
   const {
-    pitch,
-    rms,
+    audioBuffer,
+    sampleRate,
     bufferId,
-    isActive,
-    micAccess,
-    requestPermission,
-    startStreaming,
-    reinitialize,
-    restartStream
   } = useGlobalPitchDetection()
+  
+  const isActive = gameScreenMicrophone.isActive
+  const micAccess = gameScreenMicrophone.micAccess
 
   // stores
   const idQ = useUiStore((s) => s.idHistory)
+  const pitchQ = useUiStore((s) => s.pitchHistory)
+  const rmsQ = useUiStore((s) => s.rmsHistory)
   const addPitch = useUiStore((s) => s.addPitch)
   const addRMS = useUiStore((s) => s.addRMS)
   const addId = useUiStore((s) => s.addId)
@@ -115,6 +129,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
   // state
   const [isRecording, setIsRecording] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
+  const [pitch, setPitch] = useState(-1)
 
   // viewport / plotting
   const [viewportCenterFreq, setViewportCenterFreq] = useState<number>(440)
@@ -127,17 +142,16 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
   const [activeNoteIndex, setActiveNoteIndex] = useState<number>(-1)
 
   // pitch points
-  const [pitchPoints, setPitchPoints] = useState<{ timestamp:number; color:string; frequency:number }[]>([])
+  const [pitchPoints, setPitchPoints] = useState<{ timestamp:number; frequency:number }[]>([])
   const prevPitch = useRef<number>(0)
   const lastValidPitch = useRef<number>(0)
 
   // target segments (square waveform)
   // each segment: { startMs, endMs, frequency, pitch, noteId }
-  const [targetSegments, setTargetSegments] = useState<Array<any>>([])
-  const cycleTemplateRef = useRef<{ segments:Array<any>, cycleDuration:number } | null>(null)
+  const [targetSegments, setTargetSegments] = useState<any[]>([])
+  const cycleTemplateRef = useRef<{ segments: any[], cycleDuration:number } | null>(null)
   const appendControllerRef = useRef<{ nextStartMs:number | null, running:boolean }>({ nextStartMs: null, running: false })
 
-  const [gameStartTime, setGameStartTime] = useState<number>(0)
   const startTimeRef = useRef<number>(Date.now())
   const animationFrameRef = useRef<number | null>(null)
   const [renderTrigger, setRenderTrigger] = useState(0)
@@ -155,7 +169,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
   // process notes payload
   const processNotesData = useCallback(() => {
     if (!notes?.measures) return []
-    const all: Array<any> = []
+    const all: any[] = []
     const sortedMeasures = [...notes.measures].sort((a: any, b: any) => a.measure_number - b.measure_number)
     sortedMeasures.forEach((measure: any) => {
       const sortedNotes = [...measure.notes].sort((a: any, b: any) => a.beat - b.beat)
@@ -189,11 +203,6 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
     return Math.max(0, Math.min(graphHeight, y))
   }, [graphHeight, viewportCenterFreq])
 
-  const getAlignedYPosition = useCallback((pitchName: string) => {
-    const f = NOTE_FREQUENCIES_MAP[pitchName]
-    if (!f) return graphHeight / 2
-    return freqToY(f)
-  }, [freqToY])
 
   // calculate viewport center
   const calculateViewportCenter = useCallback(() => {
@@ -209,7 +218,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
   const buildCycleTemplate = useCallback(() => {
     const processed = processNotesData()
     if (!processed.length) return { segments: [], cycleDuration: 0 }
-    const segments: Array<any> = []
+    const segments: any[] = []
     let cursor = 0
     for (let i = 0; i < processed.length; i++) {
       const n = processed[i]
@@ -223,7 +232,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
   }, [processNotesData])
 
   // append one cycle at absolute start (ensures no overlaps)
-  const appendCycleAbsolute = useCallback((template: { segments:Array<any>; cycleDuration:number }, absoluteStartMs: number) => {
+  const appendCycleAbsolute = useCallback((template: { segments: any[]; cycleDuration:number }, absoluteStartMs: number) => {
     if (!template || !template.segments?.length) return
     const newSegments = template.segments.map(s => ({
       startMs: absoluteStartMs + s.startRel,
@@ -369,32 +378,12 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
     return () => cancelAnimationFrame(rafId)
   }, [isRecording, isPaused, targetSegments, graphWidth, playGuitarHarmonic])
 
-  // microphone initialization on component mount
+  // Simple microphone status logging
   useEffect(() => {
-    const initializeMicrophone = async () => {
-      console.log('🎤 GraphModeGame: Initializing microphone system...');
-      try {
-        // Try to reinitialize the microphone system
-        const success = await reinitialize();
-        if (!success) {
-          console.log('🎤 GraphModeGame: Initial reinitialize failed, trying restart stream...');
-          await restartStream();
-        }
-      } catch (error) {
-        console.error('🎤 GraphModeGame: Error initializing microphone:', error);
-        // Fallback to manual permission request
-        if (micAccess === 'pending') {
-          requestPermission();
-        }
-      }
-    };
-    
-    initializeMicrophone();
-  }, []); // Run once on mount
-
-  // microphone permission & streaming
-  useEffect(() => { if (micAccess === 'pending') requestPermission() }, [micAccess, requestPermission])
-  useEffect(() => { if (!isRecording || isPaused) return; if (micAccess === 'granted' && !isActive) startStreaming() }, [isRecording, isPaused, micAccess, isActive, startStreaming])
+    if (isRecording) {
+      console.log(`🎤 GraphModeGame: Microphone status - Access: ${micAccess}, Active: ${isActive}`);
+    }
+  }, [isRecording, micAccess, isActive])
 
   // viewport animation RAF
   const animate = useCallback(() => {
@@ -419,52 +408,67 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
     return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current) }
   }, [isRecording, isPaused, animate])
 
-  // Monitor microphone health and restart if needed
+
+  // Process audio buffer with DSP module for pitch detection with noise reduction
   useEffect(() => {
-    if (!isRecording) return;
+    if (!audioBuffer || audioBuffer.length === 0 || !sampleRate || !isRecording || isPaused || !isActive) return;
     
-    const checkMicrophoneHealth = async () => {
-      // Check if microphone data is stale (no new data for 3 seconds)
-      const now = Date.now();
-      const lastDataTime = startTimeRef.current;
-      const isDataStale = (now - lastDataTime) > 3000;
+    // Process each bufferId only once
+    if (bufferId === idQ[idQ.length - 1]) return;
+    
+    // Calculate RMS
+    DSPModule.rms(audioBuffer).then(currentRms => {
+      addRMS(currentRms);
       
-      if (micAccess === 'granted' && !isActive && isDataStale) {
-        console.log('🎤 GraphModeGame: Microphone appears to be stuck, attempting restart...');
-        try {
-          await restartStream();
-        } catch (error) {
-          console.error('🎤 GraphModeGame: Failed to restart microphone stream:', error);
-        }
+      // Set parameters for pitch estimation with noise reduction
+      let minFreq = MIN_FREQ;
+      let maxFreq = MAX_FREQ;
+      let threshold = THRESHOLD_DEFAULT;
+
+      // Previous RMS and pitch values
+      const rms_1 = rmsQ[rmsQ.length - 1];
+      const rms_2 = rmsQ[rmsQ.length - 2];
+      const pitch_1 = pitchQ[pitchQ.length - 1];
+      const pitch_2 = pitchQ[pitchQ.length - 2];
+
+      // Check conditions to restrict pitch search range (noise reduction)
+      let restrictRange = ENABLE_FILTER;
+      restrictRange &&= pitch_1 > 0; // Previous pitch detected
+      restrictRange &&= rms_1 < rms_2 * RMS_GAP; // Decreasing RMS
+      restrictRange &&= pitch_1 > 0 && pitch_2 > 0 && Math.abs(pitch_1 - pitch_2) / pitch_2 <= MAX_PITCH_DEV; // Stable pitch
+      
+      if (restrictRange) {
+        minFreq = pitch_1 * (1 - MAX_PITCH_DEV);
+        maxFreq = pitch_1 * (1 + MAX_PITCH_DEV);
+        threshold = THRESHOLD_NOISY;
       }
-    };
-    
-    // Check every 5 seconds
-    const healthCheckInterval = setInterval(checkMicrophoneHealth, 5000);
-    
-    return () => {
-      clearInterval(healthCheckInterval);
-    };
-  }, [isRecording, micAccess, isActive, restartStream])
+
+      // Estimate pitch with adaptive parameters
+      DSPModule.pitch(audioBuffer, sampleRate, minFreq, maxFreq, threshold).then(detectedPitch => {
+        setPitch(detectedPitch);
+        addPitch(detectedPitch);
+        console.log(`Pitch: ${detectedPitch.toFixed(1)}Hz  [${minFreq.toFixed(1)}Hz-${maxFreq.toFixed(1)}Hz] threshold: ${threshold.toFixed(2)}`);
+      }).catch(error => {
+        console.error('DSP pitch detection error:', error);
+        setPitch(-1);
+        addPitch(-1);
+      });
+    }).catch(error => {
+      console.error('DSP RMS calculation error:', error);
+    });
+  }, [audioBuffer, sampleRate, bufferId, isRecording, isPaused, isActive, idQ, pitchQ, rmsQ, addRMS, addPitch])
 
   // pitch plotting: ensure points are added as before (timestamp + frequency)
-  const getPitchAccuracyColor = useCallback((currentPitch:number, targetFreq?:number) => {
-    if (!targetFreq || currentPitch <= 0) return "#ffffff"
-    const diff = Math.abs(currentPitch - targetFreq)
-    if (diff <= 3) return "#00ff88"
-    if (diff <= 6) return "#ff8800"
-    return "#ff0000"
-  }, [])
+  // Color calculation is now inlined to prevent dependency issues
 
   useEffect(() => {
     if (!isRecording || isPaused || !isActive) return
     if (bufferId === idQ[idQ.length - 1]) return
 
-    addId(bufferId)
-    addPitch(pitch)
-    addRMS(rms)
+    try {
+      addId(bufferId)
 
-    if (pitch > 0) {
+      if (pitch > 0) {
       const bounds = checkViewportBounds(pitch)
       const stable = isPitchStable(pitch)
       if (stable && (bounds.isAbove || bounds.isBelow)) {
@@ -481,11 +485,9 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
       if (closest) setActiveNoteIndex(cIdx)
 
       lastValidPitch.current = pitch
-      const currentTargetFreq = getCurrentTargetFrequency()
-      const color = getPitchAccuracyColor(pitch, currentTargetFreq)
       setPitchPoints(prev => {
         const now = Date.now()
-        const newPoint = { timestamp: now, color, frequency: pitch }
+        const newPoint = { timestamp: now, frequency: pitch }
         return [...prev, newPoint].filter(p => now - p.timestamp < POINT_LIFETIME_MS).slice(-MAX_PITCH_POINTS)
       })
       prevPitch.current = pitch
@@ -495,15 +497,18 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
         const last = prev[prev.length - 1]
         const shouldAdd = !last || ts - last.timestamp > 16
         if (shouldAdd) {
-          const currentTargetFreq = getCurrentTargetFrequency()
-          const color = getPitchAccuracyColor(lastValidPitch.current, currentTargetFreq)
-          const newPoint = { timestamp: ts, color, frequency: lastValidPitch.current }
+          const newPoint = { timestamp: ts, frequency: lastValidPitch.current }
           return [...prev, newPoint].filter(p => ts - p.timestamp < POINT_LIFETIME_MS).slice(-MAX_PITCH_POINTS)
         }
         return prev
       })
     }
-  }, [pitch, rms, bufferId, isRecording, isPaused, isActive, addId, addPitch, addRMS, idQ, getPitchAccuracyColor])
+    } catch (error) {
+      console.error('Error in pitch plotting:', error)
+      // Continue gracefully - don't break the plotting
+    }
+  }, [pitch, bufferId, isRecording, isPaused, isActive, addId, idQ]) 
+  // Note: Intentionally not including checkViewportBounds, getCurrentTargetFrequency to prevent plotting breaks during color changes
 
   // viewport helpers
   const checkViewportBounds = (p:number) => {
@@ -542,45 +547,38 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
     return null
   }, [targetSegments, graphWidth])
 
-  const getCurrentTargetFrequency = useCallback(() => getCurrentTargetInfo()?.frequency, [getCurrentTargetInfo])
-
-  // renderGraph: draws square waveform segments and pitch line
+  // renderGraph: draws square waveform segments and pitch line with proximity-based coloring
   const renderGraph = useMemo(() => {
-    const coloredSegments: Array<{ path:any; color:string }> = []
     const pointsLength = pitchPoints.length
     const halfWidth = graphWidth / 2
 
-    // draw pitch points regardless of isRecording (ensures visible)
+    // draw pitch line regardless of isRecording (ensures visible)
+    let pitchPath = null
     if (pointsLength > 0) {
       const now = Date.now()
-      const visible: Array<{ x:number; y:number; color:string }> = []
+      const visible: Array<{ x:number; y:number }> = []
       for (let i = 0; i < pointsLength; i++) {
         const p = pitchPoints[i]
         const timeDiff = now - p.timestamp
         const x = halfWidth - timeDiff * PIXELS_PER_MS
         if (x >= -200 && x <= graphWidth + 200) {
           const y = freqToY(p.frequency)
-          visible.push({ x, y, color: p.color })
+          visible.push({ x, y })
         }
       }
       if (visible.length >= 2) {
-        let curPath = Skia.Path.Make()
-        let curColor = visible[0].color
-        let started = false
-        for (let i = 0; i < visible.length; i++) {
-          const pt = visible[i]
-          if (pt.color !== curColor) {
-            if (started) coloredSegments.push({ path: curPath, color: curColor })
-            curPath = Skia.Path.Make()
-            curColor = pt.color
-            started = false
-          }
-          if (!started) { curPath.moveTo(pt.x, pt.y); started = true }
-          else curPath.lineTo(pt.x, pt.y)
+        pitchPath = Skia.Path.Make()
+        pitchPath.moveTo(visible[0].x, visible[0].y)
+        for (let i = 1; i < visible.length; i++) {
+          pitchPath.lineTo(visible[i].x, visible[i].y)
         }
-        if (started) coloredSegments.push({ path: curPath, color: curColor })
       }
     }
+
+    // Determine if current pitch is in proximity to target
+    const targetInfo = getCurrentTargetInfo()
+    const isInProximity = targetInfo && pitch > 0 && Math.abs(pitch - targetInfo.frequency) < 20
+    const pitchLineColor = isInProximity ? '#00FF00' : '#FFFFFF' // green for proximity, white default
 
     // compute visible target segments
     const waveformVisible = (() => {
@@ -619,8 +617,8 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
         {/* center vertical */}
         <Line p1={vec(halfWidth, 0)} p2={vec(halfWidth, graphHeight)} color="#ffffff" strokeWidth={2} />
 
-        {/* colored pitch segments */}
-        {coloredSegments.map((s, i) => <Path key={i} path={s.path} color={s.color} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" />)}
+        {/* pitch line with proximity-based coloring */}
+        {pitchPath && <Path path={pitchPath} color={pitchLineColor} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" />}
 
         {/* square waveform: draw horizontal segments and vertical jumps */}
         {(() => {
@@ -650,7 +648,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
         })()}
       </Canvas>
     )
-  }, [graphWidth, graphHeight, pitchPoints, targetSegments, viewportCenterFreq, renderTrigger])
+  }, [graphWidth, graphHeight, pitchPoints, targetSegments, viewportCenterFreq, renderTrigger, pitch, getCurrentTargetInfo])
 
   // piano keys - left side with inline target highlight (orange)
   const pianoKeys = useMemo(() => {
@@ -715,7 +713,6 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
       setIsPaused(false)
       setPitchPoints([])
       startTimeRef.current = Date.now()
-      setGameStartTime(Date.now())
       const opt = calculateViewportCenter()
       setViewportCenterFreq(opt)
       setTargetCenterFreq(opt)
@@ -731,7 +728,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
     <View style={styles.container}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('Home' as any)}>
+        <TouchableOpacity style={styles.backButton} onPress={() => handleGameExit(navigation as any)}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.screenTitle}>Tuner</Text>
