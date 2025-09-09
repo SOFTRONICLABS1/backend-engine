@@ -4,11 +4,13 @@ import { Canvas, Rect, Circle, Fill, Text as SkiaText, matchFont } from "@shopif
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useGameScreenMicrophone } from "@/hooks/useGameScreenMicrophone"
+import { useGlobalPitchDetection } from "@/hooks/useGlobalPitchDetection"
 import { NOTE_FREQUENCIES } from "@/utils/noteParser"
 import { handleGameExit } from "../../../utils/gameNavigation"
 import { GuitarHarmonics } from "@/utils/GuitarHarmonics"
 import { Audio } from "expo-av"
 import { encode as btoa } from "base-64"
+import DSPModule from "@/../specs/NativeDSPModule"
 
 // Create system font
 const systemFont = matchFont({
@@ -17,6 +19,15 @@ const systemFont = matchFont({
   fontStyle: 'normal',
   fontWeight: 'bold',
 })
+
+// TuneTracker pitch detection constants
+const MIN_FREQ = 60
+const MAX_FREQ = 6000
+const MAX_PITCH_DEV = 0.2
+const THRESHOLD_DEFAULT = 0.15
+const THRESHOLD_NOISY = 0.6
+const RMS_GAP = 1.1
+const ENABLE_FILTER = true
 
 // Game constants
 const GRAVITY = 0.5
@@ -157,9 +168,21 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   
   // Use the game screen microphone hook for simplified microphone management
   const gameScreenMicrophone = useGameScreenMicrophone()
-  const pitch = gameScreenMicrophone.pitch || 0
   const isActive = gameScreenMicrophone.isActive || false
   const micAccess = gameScreenMicrophone.micAccess || 'pending'
+  
+  // Enhanced pitch detection data from TuneTracker
+  const {
+    audioBuffer,
+    sampleRate,
+    bufferId,
+  } = useGlobalPitchDetection()
+  
+  // Advanced pitch detection state
+  const [pitch, setPitch] = useState<number>(0)
+  const [pitchHistory, setPitchHistory] = useState<number[]>([])
+  const [rmsHistory, setRmsHistory] = useState<number[]>([])
+  const [bufferIdHistory, setBufferIdHistory] = useState<string[]>([])
   
   // Game state
   const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver'>('menu')
@@ -404,23 +427,70 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const harmonicsPlayedRef = useRef<Set<string>>(new Set())
   const lastHarmonicTimeRef = useRef<{ [key: string]: number }>({})  
   
-  // Handle bird flying based on pitch detection using centralized pitch data
+  // Advanced pitch detection with TuneTracker's DSP module (replaces simple pitch detection)
   useEffect(() => {
-    if (gameState !== 'playing' || !isActive) return
+    if (!audioBuffer || audioBuffer.length === 0 || !sampleRate || gameState !== 'playing' || !isActive) return;
     
-    const currentTime = Date.now()
+    // Process each bufferId only once
+    if (bufferId === bufferIdHistory[bufferIdHistory.length - 1]) return;
     
-    // Check if we have valid pitch (any frequency detected)
-    if (pitch > 0) {
-      isPitchDetectedRef.current = true
-      lastPitchTimeRef.current = currentTime
-    } else {
-      // If no pitch for more than 200ms, stop flying
-      if (currentTime - lastPitchTimeRef.current > 200) {
-        isPitchDetectedRef.current = false
+    // Calculate RMS
+    DSPModule.rms(audioBuffer).then(currentRms => {
+      // Add to RMS history
+      setRmsHistory(prev => [...prev.slice(-9), currentRms]); // Keep last 10 values
+      
+      // Set parameters for pitch estimation with noise reduction
+      let minFreq = MIN_FREQ;
+      let maxFreq = MAX_FREQ;
+      let threshold = THRESHOLD_DEFAULT;
+
+      // Previous RMS and pitch values
+      const rms_1 = rmsHistory[rmsHistory.length - 1];
+      const rms_2 = rmsHistory[rmsHistory.length - 2];
+      const pitch_1 = pitchHistory[pitchHistory.length - 1];
+      const pitch_2 = pitchHistory[pitchHistory.length - 2];
+
+      // Check conditions to restrict pitch search range (noise reduction)
+      let restrictRange = ENABLE_FILTER;
+      restrictRange &&= pitch_1 > 0; // Previous pitch detected
+      restrictRange &&= rms_1 < rms_2 * RMS_GAP; // Decreasing RMS
+      restrictRange &&= pitch_1 > 0 && pitch_2 > 0 && Math.abs(pitch_1 - pitch_2) / pitch_2 <= MAX_PITCH_DEV; // Stable pitch
+      
+      if (restrictRange) {
+        minFreq = pitch_1 * (1 - MAX_PITCH_DEV);
+        maxFreq = pitch_1 * (1 + MAX_PITCH_DEV);
+        threshold = THRESHOLD_NOISY;
       }
-    }
-  }, [pitch, isActive, gameState])
+
+      // Estimate pitch with adaptive parameters
+      DSPModule.pitch(audioBuffer, sampleRate, minFreq, maxFreq, threshold).then(detectedPitch => {
+        setPitch(detectedPitch);
+        setPitchHistory(prev => [...prev.slice(-9), detectedPitch]); // Keep last 10 values
+        setBufferIdHistory(prev => [...prev.slice(-9), bufferId]); // Keep last 10 values
+        
+        console.log(`FlappyBird Pitch: ${detectedPitch.toFixed(1)}Hz  [${minFreq.toFixed(1)}Hz-${maxFreq.toFixed(1)}Hz] threshold: ${threshold.toFixed(2)}`);
+        
+        // Update bird flying state
+        const currentTime = Date.now();
+        if (detectedPitch > 0) {
+          isPitchDetectedRef.current = true;
+          lastPitchTimeRef.current = currentTime;
+        } else {
+          // If no pitch for more than 200ms, stop flying
+          if (currentTime - lastPitchTimeRef.current > 200) {
+            isPitchDetectedRef.current = false;
+          }
+        }
+      }).catch(error => {
+        console.error('FlappyBird DSP pitch detection error:', error);
+        setPitch(-1);
+        setPitchHistory(prev => [...prev.slice(-9), -1]);
+        setBufferIdHistory(prev => [...prev.slice(-9), bufferId]);
+      });
+    }).catch(error => {
+      console.error('FlappyBird DSP RMS calculation error:', error);
+    });
+  }, [audioBuffer, sampleRate, bufferId, gameState, isActive, pitchHistory, rmsHistory, bufferIdHistory]);
 
   // Handle game end callback
   const handleGameEnd = useCallback(() => {
@@ -650,6 +720,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     // Reset harmonic tracking
     harmonicsPlayedRef.current.clear()
     lastHarmonicTimeRef.current = {}
+    // Reset pitch detection history
+    setPitch(0)
+    setPitchHistory([])
+    setRmsHistory([])
+    setBufferIdHistory([])
     setGameState('playing')
     const now = Date.now()
     lastNoteTime.current = now
@@ -676,6 +751,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     // Reset harmonic tracking
     harmonicsPlayedRef.current.clear()
     lastHarmonicTimeRef.current = {}
+    // Reset pitch detection history
+    setPitch(0)
+    setPitchHistory([])
+    setRmsHistory([])
+    setBufferIdHistory([])
   }, [width, height, difficulty])
   
   // Render game canvas
