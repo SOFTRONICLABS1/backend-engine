@@ -323,14 +323,15 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   }, [playDataUriWithExpo])
   
   // Convert frequency to Y position on screen (LINEAR mapping for consistent visual gaps)
+  // 0Hz = bottom of screen, higher frequencies = higher on screen
   const frequencyToY = useCallback((freq: number) => {
-    // Map frequency range (80Hz to 600Hz) to screen height - LINEAR scale
-    const minFreq = 80
+    // Map frequency range (0Hz to 600Hz) to screen height - LINEAR scale
+    const minFreq = 0
     const maxFreq = 600
     const clampedFreq = Math.max(minFreq, Math.min(maxFreq, freq))
-    // LINEAR normalization instead of logarithmic
-    const normalized = (clampedFreq - minFreq) / (maxFreq - minFreq)
-    return height * 0.9 - (normalized * height * 0.8) + height * 0.05
+    // LINEAR normalization - higher freq = lower Y (top of screen)
+    const normalized = clampedFreq / maxFreq
+    return height - (normalized * height)
   }, [height])
   
   // Create a new pipe based on current note
@@ -343,12 +344,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     const tolerance = currentToleranceRef.current
     
     // Calculate frequency range for the gap (note frequency ± tolerance)
-    const minFreq = noteFrequency - tolerance
-    const maxFreq = noteFrequency + tolerance
+    const minGapFreq = Math.max(0, noteFrequency - tolerance) // Lower threshold (bottom of gap)
+    const maxGapFreq = noteFrequency + tolerance // Upper threshold (top of gap)
     
-    // Convert frequency range to Y positions (inverted: higher freq = lower Y)
-    const topOfGap = frequencyToY(maxFreq) // Higher frequency = top of gap
-    const bottomOfGap = frequencyToY(minFreq) // Lower frequency = bottom of gap
+    // Convert frequency range to Y positions
+    const topOfGap = frequencyToY(maxGapFreq) // Higher frequency = higher on screen = lower Y
+    const bottomOfGap = frequencyToY(minGapFreq) // Lower frequency = lower on screen = higher Y
     
     // Calculate BPM-adjusted base width
     const bpmSettings = BPM_SETTINGS[bpm]
@@ -362,28 +363,28 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     const minGapSize = 80 // Minimum gap size for visibility
     const gapSize = Math.abs(bottomOfGap - topOfGap)
     
-    let topHeight: number
-    let bottomY: number
+    let topPipeHeight: number // Top pipe goes from 0 to topOfGap
+    let bottomPipeStartY: number // Bottom pipe goes from bottomOfGap to height
     
     // If gap is too small, expand it
     if (gapSize < minGapSize) {
       const expansion = (minGapSize - gapSize) / 2
-      const adjustedTopOfGap = Math.max(expansion, topOfGap - expansion)
-      const adjustedBottomOfGap = Math.min(height - expansion, bottomOfGap + expansion)
+      const adjustedTopOfGap = Math.max(30, topOfGap - expansion)
+      const adjustedBottomOfGap = Math.min(height - 30, bottomOfGap + expansion)
       
-      topHeight = adjustedTopOfGap
-      bottomY = adjustedBottomOfGap
+      topPipeHeight = adjustedTopOfGap
+      bottomPipeStartY = adjustedBottomOfGap
     } else {
       // Use original positioning if gap is adequate
-      topHeight = topOfGap
-      bottomY = bottomOfGap
+      topPipeHeight = Math.max(30, topOfGap)
+      bottomPipeStartY = Math.min(height - 30, bottomOfGap)
     }
     
     const pipe: Pipe = {
       id: pipeIdCounter.current++,
       x: width,
-      topHeight: Math.max(30, topHeight), // Ensure minimum visible top pipe
-      bottomY: Math.min(height - 30, Math.max(topHeight + minGapSize, bottomY)), // Ensure minimum visible bottom pipe and proper gap
+      topHeight: topPipeHeight, // Top pipe from 0 to topOfGap
+      bottomY: bottomPipeStartY, // Bottom pipe from bottomOfGap to height
       width: pipeWidth,
       note: note,
       passed: false,
