@@ -15,6 +15,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import searchService from '../../api/services/searchService';
 import authService from '../../api/services/authService';
+import socialService from '../../api/services/socialService';
 import { navigateToUserProfile } from '../../utils/navigationHelpers';
 
 // Mock data for search results
@@ -72,6 +73,46 @@ export default function ExploreScreen({ navigation }) {
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
 
+  // Function to fetch follower counts for users
+  const fetchUserFollowerCounts = async (users) => {
+    if (!users || users.length === 0) return users;
+    
+    const usersWithFollowerCounts = await Promise.all(
+      users.map(async (user) => {
+        try {
+          console.log(`Fetching followers for user ID: ${user.id}`);
+          const followersResult = await socialService.getUserFollowers(user.id, 1, 1);
+          console.log(`Followers result for ${user.id}:`, followersResult);
+          
+          // Try different possible field names for the follower count
+          let followerCount = 0;
+          if (followersResult.data) {
+            followerCount = followersResult.data.total_count || 
+                           followersResult.data.total || 
+                           followersResult.data.count ||
+                           (followersResult.data.followers ? followersResult.data.followers.length : 0) ||
+                           0;
+          }
+          
+          console.log(`Final follower count for ${user.username}: ${followerCount}`);
+          
+          return {
+            ...user,
+            total_subscribers: followerCount
+          };
+        } catch (error) {
+          console.warn(`Failed to fetch followers for user ${user.id}:`, error);
+          return {
+            ...user,
+            total_subscribers: 0
+          };
+        }
+      })
+    );
+    
+    return usersWithFollowerCounts;
+  };
+
   const handleSearch = async (text) => {
     setSearchQuery(text);
     setSearchError(null);
@@ -88,8 +129,11 @@ export default function ExploreScreen({ navigation }) {
       // Call real search API
       const results = await searchService.search(text.trim(), 1, 20);
       
+      // Fetch follower counts for users
+      const usersWithFollowers = await fetchUserFollowerCounts(results.users || []);
+      
       setSearchResults({
-        users: results.users || [],
+        users: usersWithFollowers,
         content: results.content || [],
         tags: mockTags.filter(tag => 
           tag.name.toLowerCase().includes(text.toLowerCase())
@@ -158,7 +202,8 @@ export default function ExploreScreen({ navigation }) {
       style={[styles.contentCard, { backgroundColor: theme.surface }]}
       onPress={() => {
         console.log('Navigate to content:', item.title);
-        navigation.navigate('ContentViewer', { contentId: item.id });
+        // Navigate to main HomeScreen to show public content feed
+        navigation.navigate('Home');
       }}
     >
       <Image source={{ uri: item.thumbnail }} style={styles.contentThumbnail} />
@@ -200,7 +245,7 @@ export default function ExploreScreen({ navigation }) {
           </View>
           <Text style={[styles.accountUsername, { color: theme.textSecondary }]}>@{item.username}</Text>
           <Text style={[styles.accountFollowers, { color: theme.textSecondary }]}>
-            {followerCount > 1000 ? `${(followerCount/1000).toFixed(1)}K` : followerCount} followers
+            {followerCount > 1000 ? `${(followerCount/1000).toFixed(1)}K followers` : `${followerCount} ${followerCount === 1 ? 'follower' : 'followers'}`}
           </Text>
         </View>
       </TouchableOpacity>
@@ -215,9 +260,84 @@ export default function ExploreScreen({ navigation }) {
     return (
       <TouchableOpacity 
         style={styles.musicVideoItem}
-        onPress={() => {
+        onPress={async () => {
           console.log('Navigate to content:', item.title);
-          navigation.navigate('ContentViewer', { contentId: item.id });
+          console.log('Full content object:', JSON.stringify(item, null, 2));
+          console.log('User data check:', {
+            user_id: item.user_id,
+            user: item.user,
+            creator: item.creator,
+            author: item.author,
+            owner: item.owner
+          });
+
+          // Try to fetch user data if we have user_id but no user details
+          let userData = {
+            name: 'creator',
+            displayName: 'Creator',
+            avatar: `https://picsum.photos/50/50?random=${item.user_id || item.id}`
+          };
+
+          if (item.user_id && !item.user?.username && !item.creator?.username) {
+            try {
+              console.log(`Fetching user data for user_id: ${item.user_id}`);
+              const userResponse = await authService.getUserById(item.user_id);
+              console.log('User response:', userResponse);
+              if (userResponse) {
+                userData = {
+                  name: userResponse.username || userResponse.signup_username || 'creator',
+                  displayName: userResponse.signup_username || userResponse.username || 'Creator',
+                  avatar: userResponse.profile_image_url || `https://picsum.photos/50/50?random=${item.user_id}`
+                };
+              }
+            } catch (error) {
+              console.warn('Failed to fetch user data:', error);
+            }
+          } else {
+            // Use existing user data from search results
+            userData = {
+              name: item.creator?.username || item.user?.username || 'creator',
+              displayName: item.creator?.signup_username || item.user?.signup_username || item.creator?.username || item.user?.username || 'Creator',
+              avatar: item.creator?.profile_image_url || item.user?.profile_image_url || `https://picsum.photos/50/50?random=${item.user_id || item.id}`
+            };
+          }
+
+          console.log('Final user data:', userData);
+
+          // Navigate to ContentViewer with proper single content data
+          const contentData = {
+            id: item.id,
+            title: item.title,
+            description: item.description,
+            videoUrl: item.media_url || item.download_url || 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+            thumbnailUrl: `https://picsum.photos/400/800?random=${item.id}`,
+            audioUrl: item.media_url || item.download_url,
+            musicNotes: [],
+            difficulty: 'Medium',
+            genre: 'Music',
+            likes: item.likes_count || Math.floor(Math.random() * 1000) + 100,
+            comments: item.comments_count || Math.floor(Math.random() * 100) + 10,
+            shares: Math.floor(Math.random() * 50) + 5,
+            plays: item.play_count || 0,
+            isGameEnabled: true,
+            contentId: item.id,
+            gameId: item.media_type === 'video' ? 'video-game' : 'audio-game',
+            user: {
+              id: item.user_id,
+              name: userData.name,
+              displayName: userData.displayName,
+              avatar: userData.avatar,
+            },
+            userId: item.user_id,
+            tempo: item.tempo,
+            tags: item.tags || [],
+            created_at: item.created_at
+          };
+          navigation.navigate('ContentViewer', { 
+            posts: [contentData], 
+            initialIndex: 0,
+            singleContent: true // Flag to indicate this is single content view
+          });
         }}
       >
         <View style={styles.musicVideoThumbnailContainer}>

@@ -6,7 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "scheme": "tuneo",
     "ios": {
       "supportsTablet": true,
@@ -42,6 +42,7 @@
           "microphonePermission": "Microphone access is needed to hear the instrument."
         }
       ],
+      "expo-av",
       "expo-localization",
       [
         "expo-build-properties",

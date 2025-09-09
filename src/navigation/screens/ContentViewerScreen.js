@@ -15,6 +15,7 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { IconSymbol } from '../../components/ui/IconSymbol';
+import { GamePreview } from '../../components/games/GamePreview';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -22,7 +23,7 @@ export default function ContentViewerScreen() {
   const { theme } = useTheme();
   const navigation = useNavigation();
   const route = useRoute();
-  const { posts = [], initialIndex = 0 } = route.params || {};
+  const { posts = [], initialIndex = 0, singleContent = false } = route.params || {};
   
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
   const [likedPosts, setLikedPosts] = useState(new Set());
@@ -46,11 +47,21 @@ export default function ContentViewerScreen() {
     );
   }
 
-  const currentPost = posts[currentIndex];
-  
-  // Mock user data - in real app this would come from the post
-  const userAvatar = 'https://picsum.photos/50/50?random=user1';
-  const username = 'musiccreator';
+  // If single content, just show that one content using GamePreview
+  if (singleContent) {
+    return (
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <StatusBar hidden />
+        <GamePreview 
+          musicVideoReel={posts[0]} 
+          navigation={navigation} 
+          showFollowButton={true}
+          isScreenFocused={true}
+          isCurrentItem={true}
+        />
+      </View>
+    );
+  }
 
   const handlePlayContent = (post) => {
     Alert.alert(

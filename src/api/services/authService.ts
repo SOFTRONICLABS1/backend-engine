@@ -344,6 +344,37 @@ class AuthService {
   }
 
   /**
+   * Get user profile by user ID
+   * @param {string} userId - User ID to fetch profile for
+   * @returns {Promise} User profile data
+   */
+  async getUserById(userId: string) {
+    try {
+      console.log('=================== Starting Get User By ID ===================');
+      console.log('👤 Fetching user profile for ID:', userId);
+      
+      const response = await apiClient.get(API_ENDPOINTS.AUTH.USER(userId));
+      
+      console.log('✅ User profile fetched successfully:', response.data);
+      console.log('=================== Get User By ID Completed ===================');
+      return response.data;
+    } catch (error: any) {
+      console.log('=================== Get User By ID Failed ===================');
+      console.error('Failed to fetch user profile for ID:', userId, error);
+      if (error.response) {
+        console.error('❌ Get User By ID Error Response:', error.response.data);
+        throw new Error(error.response.data.message || 'Failed to fetch user profile');
+      } else if (error.request) {
+        console.error('❌ No response received:', error.request);
+        throw new Error('No response from server. Please check your connection.');
+      } else {
+        console.error('❌ Error setting up request:', error.message);
+        throw new Error('Failed to fetch user profile. Please try again.');
+      }
+    }
+  }
+
+  /**
    * Logout user
    * @returns {Promise}
    */
