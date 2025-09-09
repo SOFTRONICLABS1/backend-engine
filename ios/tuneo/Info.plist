@@ -37,9 +37,17 @@
           <string>exp+tuneo</string>
         </array>
       </dict>
+      <dict>
+        <key>CFBundleURLSchemes</key>
+        <array>
+          <string>com.googleusercontent.apps.60455306259-c9erh3v8qcn6pvjcd45a4848siakqfrs</string>
+        </array>
+      </dict>
     </array>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>GIDClientID</key>
+    <string>60455306259-c9erh3v8qcn6pvjcd45a4848siakqfrs.apps.googleusercontent.com</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
     <key>LSRequiresIPhoneOS</key>

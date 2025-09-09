@@ -9,6 +9,7 @@ export type AudioBuffer = {
 }
 
 declare class MicrophoneStreamModule extends NativeModule<MicrophoneStreamModuleEvents> {
+  requestPermission(): Promise<'granted' | 'denied'>
   stopRecording(): void
   startRecording(): void
   getSampleRate(): number

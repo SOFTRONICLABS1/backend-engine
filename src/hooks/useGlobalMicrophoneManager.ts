@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Alert, Platform } from 'react-native';
 import { AudioModule } from 'expo-audio';
 import MicrophoneStreamModule, { AudioBuffer } from '../../modules/microphone-stream';
@@ -19,6 +19,7 @@ type MicrophonePermissionStatus = 'pending' | 'granted' | 'denied' | 'requesting
 let globalMicrophoneState = {
   permissionStatus: 'pending' as MicrophonePermissionStatus,
   isStreaming: false,
+  isInitializing: false,
   sampleRate: 44100,
   pitchData: {
     pitch: -1,
@@ -34,6 +35,8 @@ let globalListeners: Set<(data: PitchData) => void> = new Set();
 let globalPermissionListeners: Set<(status: MicrophonePermissionStatus) => void> = new Set();
 let microphoneSubscription: any = null;
 let isInitialized = false;
+let initializationPromise: Promise<void> | null = null;
+let healthCheckInterval: NodeJS.Timeout | null = null;
 
 // Constants for audio processing
 const BUF_SIZE = 9000;
@@ -43,45 +46,100 @@ const MAX_FREQ = 1000;
 const THRESHOLD_DEFAULT = 0.3;
 
 // Global functions for managing microphone
-export const requestMicrophonePermission = async (): Promise<MicrophonePermissionStatus> => {
+export const requestMicrophonePermission = async (retryCount = 0): Promise<MicrophonePermissionStatus> => {
+  const MAX_RETRIES = 3;
+  
   if (globalMicrophoneState.permissionStatus === 'granted') {
+    // Verify streaming is actually working
+    if (!globalMicrophoneState.isStreaming) {
+      console.log('🎤 Permission granted but not streaming, starting stream...');
+      await startMicrophoneStream();
+    }
     return 'granted';
   }
 
-  if (globalMicrophoneState.permissionStatus === 'requesting') {
-    return 'requesting';
+  if (globalMicrophoneState.permissionStatus === 'requesting' && retryCount === 0) {
+    // Wait for existing request to complete
+    return new Promise((resolve) => {
+      const checkStatus = () => {
+        if (globalMicrophoneState.permissionStatus !== 'requesting') {
+          resolve(globalMicrophoneState.permissionStatus);
+        } else {
+          setTimeout(checkStatus, 100);
+        }
+      };
+      checkStatus();
+    });
   }
 
   try {
     globalMicrophoneState.permissionStatus = 'requesting';
     notifyPermissionListeners();
+    
+    console.log(`🎤 Requesting microphone permission (attempt ${retryCount + 1})...`);
 
-    const permission = await AudioModule.requestRecordingPermissionsAsync();
-    const hasPermission = permission.granted;
+    // Try both permission systems for better compatibility
+    let hasPermission = false;
+    
+    try {
+      // First try AudioModule (expo-audio)
+      const audioPermission = await AudioModule.requestRecordingPermissionsAsync();
+      hasPermission = audioPermission.granted;
+      console.log(`🎤 AudioModule permission result: ${hasPermission}`);
+    } catch (audioError) {
+      console.warn('🎤 AudioModule permission failed, trying native module:', audioError);
+      
+      // Fallback to native module
+      try {
+        const nativeResult = await MicrophoneStreamModule.requestPermission();
+        hasPermission = nativeResult === 'granted';
+        console.log(`🎤 Native module permission result: ${hasPermission}`);
+      } catch (nativeError) {
+        console.error('🎤 Both permission systems failed:', nativeError);
+        throw nativeError;
+      }
+    }
     
     if (hasPermission) {
       globalMicrophoneState.permissionStatus = 'granted';
-      // Auto-start streaming when permission is granted
+      console.log('🎤 Microphone permission granted, starting stream...');
+      
+      // Wait a bit before starting stream to ensure permission is fully processed
+      await new Promise(resolve => setTimeout(resolve, 100));
       await startMicrophoneStream();
+      
+      console.log('🎤 Microphone system fully initialized');
     } else {
       globalMicrophoneState.permissionStatus = 'denied';
+      console.log('🎤 Microphone permission denied');
       
-      if (Platform.OS === 'ios') {
-        Alert.alert(
-          'Microphone Access Required',
-          'Please enable microphone access in Settings > Privacy & Security > Microphone > Tuneo to use voice features.',
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Microphone Access Required',
-          'Please enable microphone access in your device settings to use voice features.',
-          [{ text: 'OK' }]
-        );
+      // Only show alert on first attempt
+      if (retryCount === 0) {
+        if (Platform.OS === 'ios') {
+          Alert.alert(
+            'Microphone Access Required',
+            'Please enable microphone access in Settings > Privacy & Security > Microphone > Tuneo to use voice features.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Microphone Access Required',
+            'Please enable microphone access in your device settings to use voice features.',
+            [{ text: 'OK' }]
+          );
+        }
       }
     }
   } catch (error) {
-    console.error('Error requesting microphone permission:', error);
+    console.error('🎤 Error requesting microphone permission:', error);
+    
+    // Retry logic
+    if (retryCount < MAX_RETRIES) {
+      console.log(`🎤 Retrying permission request in 1 second... (${retryCount + 1}/${MAX_RETRIES})`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return await requestMicrophonePermission(retryCount + 1);
+    }
+    
     globalMicrophoneState.permissionStatus = 'denied';
   }
 
@@ -89,18 +147,53 @@ export const requestMicrophonePermission = async (): Promise<MicrophonePermissio
   return globalMicrophoneState.permissionStatus;
 };
 
-const startMicrophoneStream = async () => {
-  if (globalMicrophoneState.isStreaming || globalMicrophoneState.permissionStatus !== 'granted') {
+const startMicrophoneStream = async (retryCount = 0) => {
+  const MAX_STREAM_RETRIES = 3;
+  
+  if (globalMicrophoneState.isStreaming) {
+    console.log('🎤 Microphone stream is already running');
+    return;
+  }
+  
+  if (globalMicrophoneState.permissionStatus !== 'granted') {
+    console.log('🎤 Cannot start stream - no permission');
     return;
   }
 
+  if (globalMicrophoneState.isInitializing && retryCount === 0) {
+    console.log('🎤 Microphone is already initializing, waiting...');
+    return new Promise((resolve) => {
+      const checkInitializing = () => {
+        if (!globalMicrophoneState.isInitializing) {
+          resolve(undefined);
+        } else {
+          setTimeout(checkInitializing, 100);
+        }
+      };
+      checkInitializing();
+    });
+  }
+
   try {
-    globalMicrophoneState.isStreaming = true;
+    globalMicrophoneState.isInitializing = true;
+    console.log(`🎤 Starting microphone stream (attempt ${retryCount + 1})...`);
     
     let audioBuffer = new Array(BUF_SIZE).fill(0);
     let rmsQueue: number[] = [];
     let bufferIdCounter = 0;
 
+    // Clean up any existing subscription first
+    if (microphoneSubscription) {
+      try {
+        microphoneSubscription.remove();
+        console.log('🎤 Cleaned up old subscription');
+      } catch (error) {
+        console.warn('Error removing old subscription:', error);
+      }
+      microphoneSubscription = null;
+    }
+
+    // Set up listener first
     microphoneSubscription = MicrophoneStreamModule.addListener('onAudioBuffer', (buffer: AudioBuffer) => {
       if (!globalMicrophoneState.isStreaming) return;
 
@@ -114,7 +207,6 @@ const startMicrophoneStream = async () => {
       // Process audio data asynchronously
       (async () => {
         try {
-          // Debug: Log buffer info          
           // Calculate RMS
           const rms = await DSPModule.rms(buffer.samples);
           rmsQueue.push(rms);
@@ -147,21 +239,67 @@ const startMicrophoneStream = async () => {
       })();
     });
 
-    MicrophoneStreamModule.startRecording();
+    console.log('🎤 Listener set up, starting recording...');
     
-    // Get sample rate after starting recording
-    setTimeout(() => {
+    try {
+      await MicrophoneStreamModule.startRecording();
+      globalMicrophoneState.isStreaming = true;
+      console.log('🎤 Microphone recording started successfully');
+    } catch (recordingError) {
+      console.error('🎤 Error starting recording:', recordingError);
+      
+      // Clean up and retry
+      if (microphoneSubscription) {
+        microphoneSubscription.remove();
+        microphoneSubscription = null;
+      }
+      
+      // Retry logic
+      if (retryCount < MAX_STREAM_RETRIES) {
+        globalMicrophoneState.isInitializing = false;
+        console.log(`🎤 Retrying stream start in 500ms... (${retryCount + 1}/${MAX_STREAM_RETRIES})`);
+        await new Promise(resolve => setTimeout(resolve, 500));
+        return await startMicrophoneStream(retryCount + 1);
+      } else {
+        throw recordingError;
+      }
+    }
+    
+    // Get sample rate after starting recording with retry
+    setTimeout(async () => {
       try {
-        globalMicrophoneState.sampleRate = MicrophoneStreamModule.getSampleRate();
+        const sampleRate = MicrophoneStreamModule.getSampleRate();
+        globalMicrophoneState.sampleRate = sampleRate;
+        console.log('🎤 Sample rate set to:', sampleRate);
       } catch (error) {
         console.error('Error getting sample rate:', error);
         globalMicrophoneState.sampleRate = 44100; // Default fallback
       }
-    }, 100);
+    }, 200); // Slightly longer delay
+    
+    // Start health monitoring
+    startHealthCheck();
     
   } catch (error) {
-    console.error('Error starting microphone stream:', error);
+    console.error(`🎤 Error starting microphone stream (attempt ${retryCount + 1}):`, error);
     globalMicrophoneState.isStreaming = false;
+    
+    if (microphoneSubscription) {
+      try {
+        microphoneSubscription.remove();
+      } catch {}
+      microphoneSubscription = null;
+    }
+    
+    // Final retry logic
+    if (retryCount < MAX_STREAM_RETRIES) {
+      console.log(`🎤 Final retry in 1 second... (${retryCount + 1}/${MAX_STREAM_RETRIES})`);
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      globalMicrophoneState.isInitializing = false;
+      return await startMicrophoneStream(retryCount + 1);
+    }
+  } finally {
+    globalMicrophoneState.isInitializing = false;
   }
 };
 
@@ -171,15 +309,66 @@ const stopMicrophoneStream = async () => {
   try {
     globalMicrophoneState.isStreaming = false;
     
+    // Stop health monitoring
+    if (healthCheckInterval) {
+      clearInterval(healthCheckInterval);
+      healthCheckInterval = null;
+    }
+    
     if (microphoneSubscription) {
       microphoneSubscription.remove();
       microphoneSubscription = null;
     }
 
     MicrophoneStreamModule.stopRecording();
+    console.log('🎤 Microphone stream stopped');
   } catch (error) {
     console.error('Error stopping microphone stream:', error);
   }
+};
+
+// Health check mechanism to ensure microphone stays active
+const startHealthCheck = () => {
+  if (healthCheckInterval) {
+    clearInterval(healthCheckInterval);
+  }
+  
+  let lastBufferId = globalMicrophoneState.pitchData.bufferId;
+  let staleDataCount = 0;
+  
+  healthCheckInterval = setInterval(async () => {
+    if (!globalMicrophoneState.isStreaming) return;
+    
+    const currentBufferId = globalMicrophoneState.pitchData.bufferId;
+    const now = Date.now();
+    const lastTimestamp = globalMicrophoneState.pitchData.timestamp;
+    
+    // Check if we're getting fresh data
+    const isDataStale = (now - lastTimestamp) > 3000; // 3 seconds
+    const isBufferStuck = currentBufferId === lastBufferId;
+    
+    if (isDataStale || isBufferStuck) {
+      staleDataCount++;
+      console.warn(`🎤 Health check: Stale data detected (count: ${staleDataCount})`);
+      
+      // If data has been stale for too long, restart the stream
+      if (staleDataCount >= 3) {
+        console.warn('🎤 Health check: Restarting microphone stream due to stale data');
+        try {
+          await stopMicrophoneStream();
+          await new Promise(resolve => setTimeout(resolve, 500));
+          await startMicrophoneStream();
+          staleDataCount = 0;
+        } catch (error) {
+          console.error('🎤 Health check: Failed to restart stream:', error);
+        }
+      }
+    } else {
+      staleDataCount = 0; // Reset counter if data is fresh
+    }
+    
+    lastBufferId = currentBufferId;
+  }, 2000); // Check every 2 seconds
 };
 
 const notifyPitchListeners = () => {
@@ -204,28 +393,113 @@ const notifyPermissionListeners = () => {
 
 // Initialize the microphone system (called once at app startup)
 export const initializeGlobalMicrophone = async () => {
-  if (isInitialized) return;
+  if (isInitialized) {
+    // If already initialized, return existing promise if still in progress
+    if (initializationPromise) {
+      return initializationPromise;
+    }
+    return;
+  }
   
   isInitialized = true;
   
-  // Check if we already have permission
+  initializationPromise = (async () => {
+    console.log('🎤 Initializing global microphone system...');
+    
+    try {
+      // Check current permission status with both systems
+      let hasPermission = false;
+      
+      // Try AudioModule first
+      try {
+        const permission = await AudioModule.getRecordingPermissionsAsync();
+        hasPermission = permission.granted;
+        console.log('🎤 Initial AudioModule permission check:', hasPermission);
+      } catch (error) {
+        console.warn('🎤 AudioModule permission check failed:', error);
+      }
+      
+      if (hasPermission) {
+        globalMicrophoneState.permissionStatus = 'granted';
+        console.log('🎤 Permission already granted, starting stream...');
+        await startMicrophoneStream();
+      } else {
+        console.log('🎤 No permission found, requesting...');
+        await requestMicrophonePermission();
+      }
+    } catch (error) {
+      console.error('🎤 Error during microphone initialization:', error);
+      globalMicrophoneState.permissionStatus = 'pending';
+      
+      // Fallback: try to request permission anyway
+      try {
+        await requestMicrophonePermission();
+      } catch (requestError) {
+        console.error('🎤 Fallback permission request failed:', requestError);
+      }
+    }
+    
+    notifyPermissionListeners();
+    console.log('🎤 Global microphone system initialization complete');
+  })();
+  
+  return initializationPromise;
+};
+
+// Reinitialize microphone system (for when navigating to game screens)
+export const reinitializeMicrophone = async (): Promise<boolean> => {
+  console.log('🎤 Reinitializing microphone system...');
+  
   try {
+    // First stop existing stream if running
+    if (globalMicrophoneState.isStreaming) {
+      await stopMicrophoneStream();
+    }
+    
+    // Check current permission status
     const permission = await AudioModule.getRecordingPermissionsAsync();
     if (permission.granted) {
       globalMicrophoneState.permissionStatus = 'granted';
       await startMicrophoneStream();
+      notifyPermissionListeners();
+      console.log('🎤 Microphone successfully reinitialized');
+      return true;
     } else {
-      // Request microphone permission immediately when app starts
-      await requestMicrophonePermission();
+      // Request permission again
+      const newStatus = await requestMicrophonePermission();
+      console.log('🎤 Microphone permission status after reinit:', newStatus);
+      return newStatus === 'granted';
     }
   } catch (error) {
-    console.error('Error checking microphone permission:', error);
-    globalMicrophoneState.permissionStatus = 'pending';
-    // Still try to request permission even if checking failed
-    await requestMicrophonePermission();
+    console.error('🎤 Error reinitializing microphone:', error);
+    return false;
   }
+};
+
+// Force restart microphone stream (for when stream gets stuck)
+export const restartMicrophoneStream = async (): Promise<boolean> => {
+  console.log('🎤 Restarting microphone stream...');
   
-  notifyPermissionListeners();
+  try {
+    // Stop current stream
+    await stopMicrophoneStream();
+    
+    // Wait a bit for cleanup
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Start again if we have permission
+    if (globalMicrophoneState.permissionStatus === 'granted') {
+      await startMicrophoneStream();
+      console.log('🎤 Microphone stream successfully restarted');
+      return true;
+    } else {
+      console.log('🎤 Cannot restart stream - no permission');
+      return false;
+    }
+  } catch (error) {
+    console.error('🎤 Error restarting microphone stream:', error);
+    return false;
+  }
 };
 
 // Hook for components to use the global microphone system
@@ -278,6 +552,14 @@ export const useGlobalMicrophone = () => {
   // Check if data is fresh (within last 2 seconds)
   const isDataFresh = (Date.now() - pitchData.timestamp) < 2000;
 
+  const reinitialize = useCallback(async () => {
+    return await reinitializeMicrophone();
+  }, []);
+
+  const restartStream = useCallback(async () => {
+    return await restartMicrophoneStream();
+  }, []);
+
   return {
     // Pitch data
     pitch: pitchData.pitch,
@@ -296,6 +578,8 @@ export const useGlobalMicrophone = () => {
     requestPermission,
     startStreaming,
     stopStreaming,
+    reinitialize,
+    restartStream,
     
     // Legacy compatibility
     micAccess: permissionStatus,

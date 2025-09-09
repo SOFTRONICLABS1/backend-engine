@@ -1,4 +1,16 @@
-import { NoteData } from '@/api/types';
+export interface NoteData {
+  notes: {
+    pitch: string;
+    duration: string;
+  };
+  instrument: string;
+  key_signature: string;
+  time_signature: string;
+  metadata: {
+    composer: string;
+    loop: boolean;
+  };
+}
 
 export interface ParsedNote {
   pitch: string;

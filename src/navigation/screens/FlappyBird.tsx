@@ -19,27 +19,22 @@ const GRAVITY = 0.5
 const BIRD_SIZE = 20
 const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
-const NOTE_CIRCLE_RADIUS = 22 // Fixed size for note label circles
 const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
 const NOTE_TEXT_OFFSET_Y = 4 // Fixed Y offset for note text
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
   easy: { 
-    initialFrequencyTolerance: 24, // +/- 24Hz at start
-    minFrequencyTolerance: 10, // +/- 10Hz minimum
-    minGap: 8, // minimum gap reduction in easy mode
-    initialGap: 20
+    frequencyTolerance: 40, // +/- 40Hz (larger gap for easy mode)
+    circleRadius: 22, // Larger circle for easy mode
   },
   medium: { 
-    frequencyTolerance: 16, // +/- 16Hz
-    minGap: 16,
-    initialGap: 16
+    frequencyTolerance: 24, // +/- 20Hz
+    circleRadius: 16, // Medium circle for medium mode
   },
   hard: { 
-    frequencyTolerance: 12, // +/- 12Hz
-    minGap: 12,
-    initialGap: 12
+    frequencyTolerance: 16, // +/- 12Hz
+    circleRadius: 14, // Smaller circle for hard mode
   }
 }
 
@@ -65,6 +60,7 @@ interface Pipe {
   width: number
   note: Note
   passed: boolean
+  circleRadius: number
 }
 
 interface Bird {
@@ -79,7 +75,18 @@ type BPM = 20 | 40 | 60 | 120
 export const FlappyBird = () => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
-  const { pitch, isActive, micAccess } = useGlobalPitchDetection()
+  
+  // Add error handling for pitch detection hook
+  let pitch = 0, isActive = false, micAccess = 'pending', startStreaming = () => Promise.resolve()
+  try {
+    const pitchData = useGlobalPitchDetection()
+    pitch = pitchData.pitch || 0
+    isActive = pitchData.isActive || false
+    micAccess = pitchData.micAccess || 'pending'
+    startStreaming = pitchData.startStreaming || (() => Promise.resolve())
+  } catch (error) {
+    console.error('Error initializing pitch detection in FlappyBird:', error)
+  }
   
   // Game state
   const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver'>('menu')
@@ -87,6 +94,7 @@ export const FlappyBird = () => {
   const [pipes, setPipes] = useState<Pipe[]>([])
   const [score, setScore] = useState(0)
   const [cycle, setCycle] = useState(0) // Track cycles in easy mode
+  const [isInitializing, setIsInitializing] = useState(true)
   
   // Settings
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
@@ -97,7 +105,7 @@ export const FlappyBird = () => {
   const lastNoteTime = useRef<number>(0)
   const pipeIdCounter = useRef(0)
   const gameStartTime = useRef<number>(0)
-  const currentCycleToleranceRef = useRef<number>(24) // Locked tolerance for current cycle
+  const currentToleranceRef = useRef<number>(DIFFICULTY_SETTINGS.easy.frequencyTolerance) // Tolerance for current difficulty
   
   // Default note sequence: C3,D3, E3, F3, G3, A3, B3, C4, B3, A3, G3, F3, E3, D3, C3
   const noteSequence: Note[] = useMemo(() => [
@@ -120,48 +128,42 @@ export const FlappyBird = () => {
   
   const [currentNoteIndex, setCurrentNoteIndex] = useState(0)
   
-  // Calculate current gap size based on difficulty and cycle (for easy mode)
-  const getCurrentGapSize = useCallback(() => {
-    const settings = DIFFICULTY_SETTINGS[difficulty]
-    if (difficulty === 'easy') {
-      const reduction = Math.min(cycle, settings.initialGap - settings.minGap)
-      return Math.max(settings.minGap, settings.initialGap - reduction)
-    }
-    return settings.initialGap
-  }, [difficulty, cycle])
-  
-  
-  // Initialize cycle tolerance when game starts or difficulty changes
+  // Initialize microphone when component mounts
   useEffect(() => {
-    if (difficulty === 'easy') {
-      const settings = DIFFICULTY_SETTINGS[difficulty]
-      const reduction = cycle
-      const newTolerance = settings.initialFrequencyTolerance - reduction
-      currentCycleToleranceRef.current = Math.max(settings.minFrequencyTolerance, newTolerance)
-    } else {
-      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
+    const initMicrophone = async () => {
+      try {
+        // Add small delay to ensure component is fully mounted
+        setTimeout(async () => {
+          await startStreaming()
+          // Give it some time for microphone to become active
+          setTimeout(() => {
+            setIsInitializing(false)
+          }, 2000)
+        }, 100)
+      } catch (error) {
+        console.error('Failed to start microphone streaming in FlappyBird:', error)
+        setIsInitializing(false) // Don't stay in loading state forever
+      }
     }
-  }, [difficulty, gameState])
+    
+    initMicrophone()
+  }, [])
   
-  // Update tolerance only when cycle actually increments
+  // Set tolerance based on difficulty (constant for all cycles and notes)
   useEffect(() => {
-    if (gameState === 'playing' && difficulty === 'easy') {
-      const settings = DIFFICULTY_SETTINGS[difficulty]
-      const reduction = cycle
-      const newTolerance = settings.initialFrequencyTolerance - reduction
-      const finalTolerance = Math.max(settings.minFrequencyTolerance, newTolerance)
-      currentCycleToleranceRef.current = finalTolerance
-    }
-  }, [cycle]) // Only depends on cycle, not gameState or difficulty
+    const newTolerance = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
+    currentToleranceRef.current = newTolerance
+  }, [difficulty])
   
-  // Convert frequency to Y position on screen
+  // Convert frequency to Y position on screen (LINEAR mapping for consistent visual gaps)
   const frequencyToY = useCallback((freq: number) => {
-    // Map frequency range (80Hz to 1000Hz) to screen height
+    // Map frequency range (80Hz to 600Hz) to screen height - LINEAR scale
     const minFreq = 80
-    const maxFreq = 1000
+    const maxFreq = 600
     const clampedFreq = Math.max(minFreq, Math.min(maxFreq, freq))
-    const normalized = (Math.log2(clampedFreq) - Math.log2(minFreq)) / (Math.log2(maxFreq) - Math.log2(minFreq))
-    return height * 0.9 - (normalized * height * 0.8) + height * 0.1
+    // LINEAR normalization instead of logarithmic
+    const normalized = (clampedFreq - minFreq) / (maxFreq - minFreq)
+    return height * 0.9 - (normalized * height * 0.8) + height * 0.05
   }, [height])
   
   // Create a new pipe based on current note
@@ -170,8 +172,8 @@ export const FlappyBird = () => {
     // Calculate gap based on note frequency and current difficulty tolerance
     const noteFrequency = note.frequency
     
-    // Use the locked tolerance for this cycle
-    const tolerance = currentCycleToleranceRef.current
+    // Use the tolerance for this difficulty
+    const tolerance = currentToleranceRef.current
     
     // Calculate frequency range for the gap (note frequency ± tolerance)
     const minFreq = noteFrequency - tolerance
@@ -200,12 +202,13 @@ export const FlappyBird = () => {
       bottomY: Math.min(height, bottomY),
       width: pipeWidth,
       note: note,
-      passed: false
+      passed: false,
+      circleRadius: DIFFICULTY_SETTINGS[difficulty].circleRadius
     }
     
     setCurrentNoteIndex(prev => prev + 1)
     return pipe
-  }, [currentNoteIndex, noteSequence, frequencyToY, width, height, bpm])
+  }, [currentNoteIndex, noteSequence, frequencyToY, width, height, bpm, difficulty])
   
   // Track pitch detection for continuous flying
   const isPitchDetectedRef = useRef<boolean>(false)
@@ -318,8 +321,8 @@ export const FlappyBird = () => {
             pipe.passed = true
             newScore++
             
-            // Check if we completed a full cycle (in easy mode)
-            if (difficulty === 'easy' && newScore % noteSequence.length === 0 && newScore > 0) {
+            // Check if we completed a full cycle (for cycle tracking)
+            if (newScore % noteSequence.length === 0 && newScore > 0) {
               cycleComplete = true
             }
           }
@@ -367,11 +370,7 @@ export const FlappyBird = () => {
     setCycle(0)
     setCurrentNoteIndex(0)
     // Reset tolerance based on difficulty
-    if (difficulty === 'easy') {
-      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance
-    } else {
-      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
-    }
+    currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     setGameState('playing')
     const now = Date.now()
     lastNoteTime.current = now
@@ -387,11 +386,7 @@ export const FlappyBird = () => {
     setCycle(0)
     setCurrentNoteIndex(0)
     // Reset tolerance based on difficulty
-    if (difficulty === 'easy') {
-      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].initialFrequencyTolerance
-    } else {
-      currentCycleToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
-    }
+    currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
   }, [width, height, difficulty])
   
   // Render game canvas
@@ -425,7 +420,7 @@ export const FlappyBird = () => {
             <Circle
               cx={pipe.x + pipe.width / 2}
               cy={(pipe.topHeight + pipe.bottomY) / 2}
-              r={NOTE_CIRCLE_RADIUS}
+              r={pipe.circleRadius}
               color="rgba(0, 0, 0, 0.9)"
             />
             {/* Note label text in the gap */}
@@ -450,6 +445,25 @@ export const FlappyBird = () => {
     )
   }, [gameState, width, height, pipes, bird])
   
+  // Show loading screen during initialization
+  if (isInitializing) {
+    return (
+      <View style={styles.container}>
+        {/* Back button */}
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => navigation.navigate('Home' as any)}
+        >
+          <Ionicons name="arrow-back" size={24} color="#fff" />
+        </TouchableOpacity>
+        
+        <View style={styles.menuContainer}>
+          <Text style={styles.title}>Pitch Bird</Text>
+        </View>
+      </View>
+    )
+  }
+
   // Render menu
   if (gameState === 'menu') {
     return (
@@ -545,7 +559,7 @@ export const FlappyBird = () => {
             <View style={styles.warningContainer}>
               <MaterialCommunityIcons name="microphone-off" size={24} color="#ff6b6b" />
               <Text style={styles.warningText}>
-                {micAccess !== "granted" ? "Microphone access denied" : "Start tuner first to enable microphone"}
+                {micAccess !== "granted" ? "Microphone access denied" : "Microphone is starting..."}
               </Text>
             </View>
           )}
@@ -561,7 +575,7 @@ export const FlappyBird = () => {
         <View style={styles.gameOverContainer}>
           <Text style={styles.gameOverTitle}>Game Over!</Text>
           <Text style={styles.scoreText}>Score: {score}</Text>
-          {difficulty === 'easy' && cycle > 0 && (
+          {cycle > 0 && (
             <Text style={styles.cycleText}>Cycles Completed: {cycle}</Text>
           )}
           
@@ -587,12 +601,7 @@ export const FlappyBird = () => {
       <View style={styles.gameUI}>
         <View style={styles.scoreContainer}>
           <Text style={styles.gameScore}>Score: {score}</Text>
-          {difficulty === 'easy' && (
-            <>
-              <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
-              <Text style={styles.toleranceInfo}>±{currentCycleToleranceRef.current}Hz</Text>
-            </>
-          )}
+          <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
         </View>
         
         <View style={styles.noteInfo}>
