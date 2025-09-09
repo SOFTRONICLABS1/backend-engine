@@ -11,6 +11,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import contentService from '../../api/services/contentService';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeGlobalMicrophone } from '../../hooks/useGlobalMicrophoneManager';
 
 export default function GamePayloadScreen() {
   const { theme } = useTheme();
@@ -23,6 +24,8 @@ export default function GamePayloadScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isMicrophoneLoading, setIsMicrophoneLoading] = useState(true);
+  const [microphoneError, setMicrophoneError] = useState(null);
 
   useEffect(() => {
     const loadPayloadData = async () => {
@@ -58,13 +61,33 @@ export default function GamePayloadScreen() {
     loadPayloadData();
   }, [contentId]);
 
-  // Auto-launch game when payload is ready
+  // Initialize microphone
   useEffect(() => {
-    if (!isLoading && userId && gameId && notes && !error && !isLaunching) {
-      console.log('🚀 Auto-launching game with complete payload');
+    const initializeMicrophone = async () => {
+      try {
+        setIsMicrophoneLoading(true);
+        setMicrophoneError(null);
+        console.log('🎤 GamePayloadScreen: Initializing microphone for game...');
+        await initializeGlobalMicrophone();
+        console.log('🎤 GamePayloadScreen: Microphone system initialized successfully');
+        setIsMicrophoneLoading(false);
+      } catch (error) {
+        console.error('🎤 GamePayloadScreen: Failed to initialize microphone system:', error);
+        setMicrophoneError('Failed to access microphone. Please check permissions.');
+        setIsMicrophoneLoading(false);
+      }
+    };
+
+    initializeMicrophone();
+  }, []);
+
+  // Auto-launch game when payload and microphone are ready
+  useEffect(() => {
+    if (!isLoading && !isMicrophoneLoading && userId && gameId && notes && !error && !microphoneError && !isLaunching) {
+      console.log('🚀 Auto-launching game with complete payload and microphone ready');
       handleLaunchGame();
     }
-  }, [isLoading, userId, gameId, notes, error, isLaunching]);
+  }, [isLoading, isMicrophoneLoading, userId, gameId, notes, error, microphoneError, isLaunching]);
 
 
   const handleLaunchGame = () => {
@@ -117,15 +140,19 @@ export default function GamePayloadScreen() {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={theme.primary} />
         <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
-          {isLoading ? 'Preparing game...' : 'Launching game...'}
+          {isLoading ? 'Preparing game...' : 
+           isMicrophoneLoading ? '🎤 Accessing microphone...' : 
+           'Launching game...'}
         </Text>
         <Text style={[styles.gameTitle, { color: theme.primary, marginTop: 16 }]}>
           {gameTitle}
         </Text>
-        {/* Show error if payload loading fails */}
-        {error && (
+        {/* Show error if payload loading or microphone fails */}
+        {(error || microphoneError) && (
           <View style={styles.errorContainer}>
-            <Text style={[styles.errorText, { color: 'red' }]}>{error}</Text>
+            <Text style={[styles.errorText, { color: 'red' }]}>
+              {error || microphoneError}
+            </Text>
             <TouchableOpacity
               style={[styles.retryButton, { backgroundColor: theme.primary }]}
               onPress={() => navigation.goBack()}

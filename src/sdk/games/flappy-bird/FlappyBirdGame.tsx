@@ -150,7 +150,7 @@ export interface FlappyBirdGameProps {
   onGameEnd?: (score: number) => void
 }
 
-export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd }) => {
+export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
   
@@ -358,15 +358,32 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
     const durationInSeconds = note.duration / 1000
     const pipeWidth = bpmAdjustedBase * durationInSeconds
     
-    // Pipe heights: top pipe goes from 0 to top of gap, bottom pipe goes from bottom of gap to screen bottom
-    const topHeight = topOfGap
-    const bottomY = bottomOfGap
+    // Ensure proper gap size and positioning
+    const minGapSize = 80 // Minimum gap size for visibility
+    const gapSize = Math.abs(bottomOfGap - topOfGap)
+    
+    let topHeight: number
+    let bottomY: number
+    
+    // If gap is too small, expand it
+    if (gapSize < minGapSize) {
+      const expansion = (minGapSize - gapSize) / 2
+      const adjustedTopOfGap = Math.max(expansion, topOfGap - expansion)
+      const adjustedBottomOfGap = Math.min(height - expansion, bottomOfGap + expansion)
+      
+      topHeight = adjustedTopOfGap
+      bottomY = adjustedBottomOfGap
+    } else {
+      // Use original positioning if gap is adequate
+      topHeight = topOfGap
+      bottomY = bottomOfGap
+    }
     
     const pipe: Pipe = {
       id: pipeIdCounter.current++,
       x: width,
-      topHeight: Math.max(0, topHeight),
-      bottomY: Math.min(height, bottomY),
+      topHeight: Math.max(30, topHeight), // Ensure minimum visible top pipe
+      bottomY: Math.min(height - 30, Math.max(topHeight + minGapSize, bottomY)), // Ensure minimum visible bottom pipe and proper gap
       width: pipeWidth,
       note: note,
       passed: false,
@@ -665,7 +682,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes, onGameEnd
     if (gameState === 'menu') return null
     
     return (
-      <Canvas style={{ width, height }}>
+      <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0 }}>
         <Fill color="#87CEEB" />
         
         {/* Pipes */}
@@ -926,14 +943,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#87CEEB',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   backButton: {
     position: 'absolute',
-    top: 50,
+    top: 60,
     left: 20,
     width: 40,
     height: 40,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.5)',
     borderRadius: 20,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1103,8 +1125,8 @@ const styles = StyleSheet.create({
   },
   gameUI: {
     position: 'absolute',
-    top: 50,
-    left: 20,
+    top: 60,
+    left: 80,
     right: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
