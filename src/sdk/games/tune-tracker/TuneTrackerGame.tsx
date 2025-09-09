@@ -1,4 +1,4 @@
-// GraphModeGame.tsx
+// TuneTrackerGame.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { View, useWindowDimensions, Text, TouchableOpacity, StyleSheet } from "react-native"
 import { Canvas, Path, Skia, vec, Line, Fill } from "@shopify/react-native-skia"
@@ -101,7 +101,7 @@ function generateToneWavDataUri(frequency: number, durationMs: number, sampleRat
 }
 
 // ---------- component ----------
-export const GraphModeGame = ({ notes }: { notes?: any }) => {
+export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
 
@@ -381,7 +381,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
   // Simple microphone status logging
   useEffect(() => {
     if (isRecording) {
-      console.log(`🎤 GraphModeGame: Microphone status - Access: ${micAccess}, Active: ${isActive}`);
+      console.log(`🎤 TuneTrackerGame: Microphone status - Access: ${micAccess}, Active: ${isActive}`);
     }
   }, [isRecording, micAccess, isActive])
 
@@ -825,7 +825,7 @@ const styles = StyleSheet.create({
   targetFreqText: { color: '#2c3e50', fontSize: 12, fontWeight: '600', textAlign: 'center' },
 })
 
-export default GraphModeGame
+export default TuneTrackerGame
 
 
 

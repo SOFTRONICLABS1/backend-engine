@@ -1,6 +1,6 @@
 import React from 'react'
 import { FlappyBirdGame } from './games/flappy-bird'
-import { GraphModeGame } from './games/graph-mode'
+import { TuneTrackerGame } from './games/tune-tracker'
 
 /**
  * Game Registry - Maps game names to IDs and components
@@ -28,18 +28,18 @@ export const GAME_REGISTRY: Record<string, GameDefinition> = {
     component: FlappyBirdGame,
     supportedPayloadTypes: ['notes']
   },
-  'graph-mode': {
-    id: 'b3910265-9a5f-4ffc-86d8-a0449267b7ad',
-    name: 'graph-mode',
-    displayName: 'Graph Mode',
-    component: GraphModeGame,
+  'tune-tracker': {
+    id: '10c45402-bfbd-47eb-9675-285f9a795998',
+    name: 'tune-tracker',
+    displayName: 'TuneTracker',
+    component: TuneTrackerGame,
     supportedPayloadTypes: ['notes']
   }
 }
 
 export const GAME_ID_MAP: Record<string, string> = {
   '2d6263d7-d4a4-4074-8be3-430120ac1cc5': 'flappy-bird',
-  'b3910265-9a5f-4ffc-86d8-a0449267b7ad': 'graph-mode'
+  '10c45402-bfbd-47eb-9675-285f9a795998': 'tune-tracker'
 }
 
 export class GameRegistry {
