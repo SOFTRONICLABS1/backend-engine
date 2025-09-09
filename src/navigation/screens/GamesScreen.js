@@ -154,19 +154,7 @@ export default function GamesScreen() {
         <View style={styles.headerPlaceholder} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Content Info */}
-        {contentTitle && (
-          <View style={[styles.contentInfo, { backgroundColor: theme.surface }]}>
-            <Text style={[styles.contentInfoText, { color: theme.textSecondary }]}>
-              Select a game to play with:
-            </Text>
-            <Text style={[styles.contentTitle, { color: theme.text }]} numberOfLines={1}>
-              "{contentTitle}"
-            </Text>
-          </View>
-        )}
-
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>        
         {/* User Suggested Games Section */}
         {isLoadingSuggested ? (
           renderLoadingSection('User Suggested Games', 'Games recommended for you')

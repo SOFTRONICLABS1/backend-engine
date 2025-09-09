@@ -731,8 +731,6 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
         <TouchableOpacity style={styles.backButton} onPress={() => handleGameExit(navigation as any)}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.screenTitle}>Tuner</Text>
-        <View style={{ width: 40 }} />
       </View>
 
       {/* Main content */}
@@ -795,7 +793,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
 // styles (unchanged)
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
-  topBar: { height: 80, backgroundColor: '#1a1a1a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
+  topBar: { height: 40, backgroundColor: '#1a1a1a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 5, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
   backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   screenTitle: { color: '#fff', fontSize: 20, fontWeight: '600' },
   mainContent: { flex: 1, flexDirection: 'row' },
