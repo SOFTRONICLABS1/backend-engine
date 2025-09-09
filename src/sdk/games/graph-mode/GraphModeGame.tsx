@@ -575,10 +575,20 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
       }
     }
 
-    // Determine if current pitch is in proximity to target
+    // Determine pitch line color based on proximity to target
     const targetInfo = getCurrentTargetInfo()
-    const isInProximity = targetInfo && pitch > 0 && Math.abs(pitch - targetInfo.frequency) < 20
-    const pitchLineColor = isInProximity ? '#00FF00' : '#FFFFFF' // green for proximity, white default
+    let pitchLineColor = '#FFFFFF' // default white (no voice or no target)
+    
+    if (targetInfo && pitch > 0) {
+      const diff = Math.abs(pitch - targetInfo.frequency)
+      if (diff <= 3) {
+        pitchLineColor = '#00FF00' // green: within ±3Hz
+      } else if (diff <= 6) {
+        pitchLineColor = '#FFFF00' // yellow: within ±6Hz
+      } else {
+        pitchLineColor = '#FF0000' // red: more than ±6Hz
+      }
+    }
 
     // compute visible target segments
     const waveformVisible = (() => {
