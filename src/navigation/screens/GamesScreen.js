@@ -14,6 +14,7 @@ import {
 import { useTheme } from '../../theme/ThemeContext';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import gamesService from '../../api/services/gamesService';
+import { initializeGlobalMicrophone } from '../../hooks/useGlobalMicrophoneManager';
 
 
 export default function GamesScreen() {
@@ -68,6 +69,21 @@ export default function GamesScreen() {
     
     fetchGames();
   }, [contentId]);
+
+  // Initialize microphone when entering games screen
+  useEffect(() => {
+    const initializeMicrophone = async () => {
+      try {
+        console.log('🎤 GamesScreen: Initializing microphone for games access...');
+        await initializeGlobalMicrophone();
+        console.log('🎤 GamesScreen: Microphone system initialized successfully');
+      } catch (error) {
+        console.error('🎤 GamesScreen: Failed to initialize microphone system:', error);
+      }
+    };
+
+    initializeMicrophone();
+  }, []);
 
   const handleGamePress = (game) => {
     console.log('Game selected:', game.title, 'for content:', contentTitle);

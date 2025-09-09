@@ -1,14 +1,30 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, Text, SafeAreaView } from 'react-native';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
 import { GameLauncher } from '../../sdk/GameLauncher';
 import { handleGameEnd, handleGameError } from '../../utils/gameNavigation';
+import { initializeGlobalMicrophone } from '../../hooks/useGlobalMicrophoneManager';
 
 export default function GameScreen({ route, navigation }) {
   const { theme } = useTheme();
   const [gameStarted, setGameStarted] = useState(false);
   const { contentId, gameId, gameTitle, payload, onGameEnd, onError } = route.params || {};
+
+  // Initialize microphone when entering individual game screen
+  useEffect(() => {
+    const initializeMicrophone = async () => {
+      try {
+        console.log('🎤 GameScreen: Initializing microphone for game play...');
+        await initializeGlobalMicrophone();
+        console.log('🎤 GameScreen: Microphone system initialized successfully');
+      } catch (error) {
+        console.error('🎤 GameScreen: Failed to initialize microphone system:', error);
+      }
+    };
+
+    initializeMicrophone();
+  }, []);
 
   const handleContentLoad = (content) => {
     console.log('Game content loaded:', content);

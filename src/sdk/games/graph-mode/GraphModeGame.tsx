@@ -15,6 +15,7 @@ import RequireMicAccess from "@/components/RequireMicAccess"
 import { GuitarHarmonics } from "@/utils/GuitarHarmonics"
 import { NOTE_FREQUENCIES } from "@/utils/noteParser"
 import DSPModule from "@/../specs/NativeDSPModule"
+import { handleGameExit } from "@/utils/gameNavigation"
 
 // ---------- constants ----------
 const PIXELS_PER_SECOND = 60
@@ -727,7 +728,7 @@ export const GraphModeGame = ({ notes }: { notes?: any }) => {
     <View style={styles.container}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('Home' as any)}>
+        <TouchableOpacity style={styles.backButton} onPress={() => handleGameExit(navigation as any)}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <Text style={styles.screenTitle}>Tuner</Text>
