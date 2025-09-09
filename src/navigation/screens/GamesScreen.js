@@ -118,7 +118,7 @@ export default function GamesScreen() {
                 .then(() => {
                   setIsMicrophoneLoading(false);
                 })
-                .catch((error) => {
+                .catch(() => {
                   setMicrophoneError('Failed to access microphone. Please check permissions.');
                   setIsMicrophoneLoading(false);
                 });
