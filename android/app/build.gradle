@@ -1,6 +1,7 @@
 apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
 
 def projectRoot = rootDir.getAbsoluteFile().getParentFile().getAbsolutePath()
 
@@ -86,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.donbraulio.tuneo'
+    namespace 'com.musicapp.android'
     defaultConfig {
-        applicationId 'com.donbraulio.tuneo'
+        applicationId 'com.musicapp.android'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
@@ -148,7 +149,17 @@ android {
 
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
-    implementation("com.facebook.react:react-android")
+    implementation("com.facebook.react:react-android") {
+        exclude group: "com.android.support", module: "support-annotations"
+        exclude group: "com.android.support", module: "support-compat"
+        exclude group: "com.android.support", module: "support-core-ui"
+        exclude group: "com.android.support", module: "support-core-utils"
+        exclude group: "com.android.support", module: "support-fragment"
+    }
+
+    // Firebase BOM
+    implementation platform('com.google.firebase:firebase-bom:32.3.1')
+    implementation 'com.google.firebase:firebase-auth'
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
@@ -156,21 +167,39 @@ dependencies {
 
     if (isGifEnabled) {
         // For animated gif support
-        implementation("com.facebook.fresco:animated-gif:${reactAndroidLibs.versions.fresco.get()}")
+        implementation("com.facebook.fresco:animated-gif:${reactAndroidLibs.versions.fresco.get()}") {
+            exclude group: "com.android.support"
+        }
     }
 
     if (isWebpEnabled) {
         // For webp support
-        implementation("com.facebook.fresco:webpsupport:${reactAndroidLibs.versions.fresco.get()}")
+        implementation("com.facebook.fresco:webpsupport:${reactAndroidLibs.versions.fresco.get()}") {
+            exclude group: "com.android.support"
+        }
         if (isWebpAnimatedEnabled) {
             // Animated webp support
-            implementation("com.facebook.fresco:animated-webp:${reactAndroidLibs.versions.fresco.get()}")
+            implementation("com.facebook.fresco:animated-webp:${reactAndroidLibs.versions.fresco.get()}") {
+                exclude group: "com.android.support"
+            }
         }
     }
 
     if (hermesEnabled.toBoolean()) {
-        implementation("com.facebook.react:hermes-android")
+        implementation("com.facebook.react:hermes-android") {
+            exclude group: "com.android.support"
+        }
     } else {
         implementation jscFlavor
+    }
+
+    // Force use of AndroidX
+    configurations.all {
+        resolutionStrategy {
+            force 'androidx.core:core:1.13.1'
+            force 'androidx.fragment:fragment:1.5.0'
+            force 'androidx.annotation:annotation:1.7.0'
+        }
+        exclude group: 'com.android.support'
     }
 }
