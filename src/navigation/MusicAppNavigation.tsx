@@ -12,7 +12,7 @@ import { AuthProvider } from '../context/AuthContext';
 import { Home } from './screens/Home';
 import { Settings } from './screens/Settings';
 import { Tuneo } from './screens/Tuneo';
-import { FlappyBird } from './screens/FlappyBird';
+// import { FlappyBird } from './screens/FlappyBird';
 import { TestGameLauncher } from '../test/TestGameLauncher';
 
 // Import mobile app components and screens
@@ -235,7 +235,7 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
               {/* Backend Engine Screens */}
               <Stack.Screen name="BackendHome" component={Home} />
               <Stack.Screen name="Tuneo" component={Tuneo} />
-              <Stack.Screen name="FlappyBird" component={FlappyBird} />
+              {/* <Stack.Screen name="FlappyBird" component={FlappyBird} /> */}
               <Stack.Screen name="TestSDK" component={TestGameLauncher} />
               <Stack.Screen 
                 name="Settings" 

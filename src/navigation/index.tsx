@@ -4,7 +4,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack"
 import { Home } from "./screens/Home"
 import { Settings } from "./screens/Settings"
 import { Tuneo } from "./screens/Tuneo"
-import { FlappyBird } from "./screens/FlappyBird"
+// import { FlappyBird } from "./screens/FlappyBird"
 import { TestGameLauncher } from "../test/TestGameLauncher"
 import AuthScreen from "./screens/AuthScreen"
 import WelcomeUserScreen from "./screens/WelcomeUserScreen"
@@ -36,12 +36,12 @@ const RootStack = createNativeStackNavigator({
         headerShown: false,
       },
     },
-    FlappyBird: {
-      screen: FlappyBird,
-      options: {
-        headerShown: false,
-      },
-    },
+    // FlappyBird: {
+    //   screen: FlappyBird,
+    //   options: {
+    //     headerShown: false,
+    //   },
+    // },
     Settings: {
       screen: Settings,
       options: () => ({

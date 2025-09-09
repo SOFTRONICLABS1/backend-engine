@@ -36,7 +36,7 @@ const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
 const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
 const NOTE_TEXT_OFFSET_Y = 4 // Fixed Y offset for note text
-const HARMONIC_DISTANCE_THRESHOLD = 20 // Distance in pixels to trigger harmonics
+const HARMONIC_DISTANCE_THRESHOLD = 50 // Distance in pixels to trigger harmonics (increased for better detection)
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
@@ -266,11 +266,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     return () => {
       clearTimeout(timer)
       
-      // Cleanup harmonic checker
-      if (harmonicCheckRef.current) {
-        cancelAnimationFrame(harmonicCheckRef.current)
-        clearTimeout(harmonicCheckRef.current)
-        harmonicCheckRef.current = null
+      // Cleanup harmonic checker interval
+      if (harmonicCheckIntervalRef.current) {
+        clearInterval(harmonicCheckIntervalRef.current)
+        harmonicCheckIntervalRef.current = null
       }
       
       // Cleanup harmonics on unmount
@@ -630,24 +629,31 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd, pitch, width])
   
   // Harmonic proximity checker (optimized to avoid blocking main thread)
-  const harmonicCheckRef = useRef<number | null>(null)
+  const harmonicCheckIntervalRef = useRef<NodeJS.Timeout | null>(null)
   
   useEffect(() => {
+    console.log('🎵 Harmonic checker effect triggered, gameState:', gameState)
+    
     if (gameState !== 'playing') {
-      if (harmonicCheckRef.current) {
-        cancelAnimationFrame(harmonicCheckRef.current)
-        harmonicCheckRef.current = null
+      if (harmonicCheckIntervalRef.current) {
+        clearInterval(harmonicCheckIntervalRef.current)
+        harmonicCheckIntervalRef.current = null
       }
       return
     }
     
     const checkHarmonics = () => {
-      if (gameState !== 'playing' || pipes.length === 0) return
+      if (gameState !== 'playing' || pipes.length === 0) {
+        console.log('🎵 Skipping harmonic check - gameState:', gameState, 'pipes:', pipes.length)
+        return
+      }
       
       try {
         const now = Date.now()
         const birdCenterX = bird.x + BIRD_SIZE / 2
         const birdCenterY = bird.y + BIRD_SIZE / 2
+        
+        console.log(`🎵 Checking harmonics - Bird position: (${birdCenterX.toFixed(1)}, ${birdCenterY.toFixed(1)}), Pipes: ${pipes.length}`)
         
         pipes.forEach(pipe => {
           const pipeId = `pipe_${pipe.id}`
@@ -659,55 +665,58 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           const distanceY = Math.abs(birdCenterY - gapCenterY)
           const totalDistance = Math.sqrt(distanceX * distanceX + distanceY * distanceY)
           
+          console.log(`🎵 Pipe ${pipe.id} (${pipe.note.name}): Distance=${totalDistance.toFixed(1)}px, Threshold=${HARMONIC_DISTANCE_THRESHOLD}px`)
+          
           // Check if bird is within threshold distance
           if (totalDistance <= HARMONIC_DISTANCE_THRESHOLD) {
             // Prevent playing the same harmonic too frequently (throttle to once per 500ms per pipe)
             const lastPlayTime = lastHarmonicTimeRef.current[pipeId] || 0
-            if (now - lastPlayTime > 500) {
-              console.log(`Playing harmonic for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - distance: ${totalDistance.toFixed(1)}px`)
-              // Use setTimeout to avoid blocking the main thread
-              setTimeout(() => {
-                try {
-                  playGuitarHarmonic(pipe.note.frequency, 200) // Play for 200ms
-                } catch (error) {
-                  console.warn('Error playing harmonic:', error)
-                }
-              }, 0)
+            const timeSinceLastPlay = now - lastPlayTime
+            
+            console.log(`🎵 Within threshold! Time since last play: ${timeSinceLastPlay}ms`)
+            
+            if (timeSinceLastPlay > 500) {
+              console.log(`🎵🎸 PLAYING HARMONIC for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - distance: ${totalDistance.toFixed(1)}px`)
+              
+              // Play harmonic immediately
+              try {
+                playGuitarHarmonic(pipe.note.frequency, 200) // Play for 200ms
+                console.log(`🎵✅ Harmonic played successfully for ${pipe.note.name}`)
+              } catch (error) {
+                console.error('🎵❌ Error playing harmonic:', error)
+              }
+              
               lastHarmonicTimeRef.current[pipeId] = now
+            } else {
+              console.log(`🎵 Harmonic throttled - waiting ${500 - timeSinceLastPlay}ms more`)
             }
           }
         })
       } catch (error) {
-        console.warn('Error in harmonic check:', error)
-      }
-      
-      // Continue checking but with throttling (every 100ms instead of every frame)
-      if (gameState === 'playing') {
-        harmonicCheckRef.current = setTimeout(() => {
-          requestAnimationFrame(checkHarmonics)
-        }, 100) as any
+        console.error('🎵❌ Error in harmonic check:', error)
       }
     }
     
-    // Start the harmonic checker
-    harmonicCheckRef.current = requestAnimationFrame(checkHarmonics)
+    // Start checking harmonics immediately
+    checkHarmonics()
+    
+    // Set up interval to check every 50ms for more responsive harmonic triggering
+    harmonicCheckIntervalRef.current = setInterval(checkHarmonics, 50)
     
     return () => {
-      if (harmonicCheckRef.current) {
-        cancelAnimationFrame(harmonicCheckRef.current)
-        clearTimeout(harmonicCheckRef.current)
-        harmonicCheckRef.current = null
+      if (harmonicCheckIntervalRef.current) {
+        clearInterval(harmonicCheckIntervalRef.current)
+        harmonicCheckIntervalRef.current = null
       }
     }
-  }, [gameState]) // Only depend on gameState, not bird/pipes to prevent running every frame
+  }, [gameState, bird, pipes, playGuitarHarmonic]) // Include dependencies to ensure we have latest values
   
   // Start game
   const startGame = useCallback(() => {
-    // Clean up any existing harmonic checker
-    if (harmonicCheckRef.current) {
-      cancelAnimationFrame(harmonicCheckRef.current)
-      clearTimeout(harmonicCheckRef.current)
-      harmonicCheckRef.current = null
+    // Clean up any existing harmonic checker interval
+    if (harmonicCheckIntervalRef.current) {
+      clearInterval(harmonicCheckIntervalRef.current)
+      harmonicCheckIntervalRef.current = null
     }
     
     setBird({ x: width * 0.2, y: height / 2, velocity: 0 })
@@ -733,11 +742,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   
   // Reset game
   const resetGame = useCallback(() => {
-    // Clean up any existing harmonic checker
-    if (harmonicCheckRef.current) {
-      cancelAnimationFrame(harmonicCheckRef.current)
-      clearTimeout(harmonicCheckRef.current)
-      harmonicCheckRef.current = null
+    // Clean up any existing harmonic checker interval
+    if (harmonicCheckIntervalRef.current) {
+      clearInterval(harmonicCheckIntervalRef.current)
+      harmonicCheckIntervalRef.current = null
     }
     
     setGameState('menu')
