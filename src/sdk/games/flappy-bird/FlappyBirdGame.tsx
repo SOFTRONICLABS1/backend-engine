@@ -36,7 +36,7 @@ const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
 const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
 const NOTE_TEXT_OFFSET_Y = 4 // Fixed Y offset for note text
-const HARMONIC_DISTANCE_THRESHOLD = 50 // Distance in pixels to trigger harmonics (increased for better detection)
+const HARMONIC_DISTANCE_THRESHOLD = 20 // Distance in pixels to trigger harmonics (increased for better detection)
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
