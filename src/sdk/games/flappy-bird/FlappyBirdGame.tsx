@@ -56,10 +56,10 @@ const DIFFICULTY_SETTINGS = {
 
 // BPM settings
 const BPM_SETTINGS = {
-  20: { speed: 0.5, notesPerSec: 1/3 },
-  40: { speed: 1, notesPerSec: 2/3 },
-  60: { speed: 1.5, notesPerSec: 1 },
-  120: { speed: 3, notesPerSec: 2 }
+  20: { speed: 0.33, notesPerSec: 1/3 },
+  40: { speed: 0.67, notesPerSec: 2/3 },
+  60: { speed: 1, notesPerSec: 1 },
+  120: { speed: 2, notesPerSec: 2 }
 }
 
 // WAV tone generator for fallback audio
@@ -596,14 +596,16 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       const bpmSettings = BPM_SETTINGS[bpm]
       const timePerNote = 1000 / bpmSettings.notesPerSec // milliseconds per note
       
+      
       // Update bird physics
       setBird(prev => {
         let newY = prev.y
         let newVelocity = 0
         
         if (gameState === 'dying') {
-          // During death animation, just apply gravity (bird falls down)
-          newVelocity = prev.velocity + GRAVITY * 1.5 // Faster falling during death
+          // During death animation, just apply gravity (bird falls down) - scaled with BPM
+          const bpmScaledGravity = GRAVITY * 1.5 * bpmSettings.speed // Faster falling during death
+          newVelocity = prev.velocity + bpmScaledGravity
           newY = prev.y + newVelocity
           
           // Stop falling when hitting the ground
@@ -632,13 +634,16 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           // Use the same frequency-to-Y mapping as pipes for perfect alignment
           const targetY = frequencyToY(pitch)
           
-          // Smooth transition to target Y position
-          const transitionSpeed = 0.15 // Adjust for smoother/faster transitions
+          // Use faster, more responsive transition that scales with BPM
+          const baseTransitionSpeed = 0.25
+          const bpmSpeedMultiplier = bpmSettings.speed
+          const transitionSpeed = baseTransitionSpeed * bpmSpeedMultiplier
           newY = prev.y + (targetY - prev.y) * transitionSpeed
           newVelocity = (newY - prev.y) // Calculate velocity based on Y change
         } else if (!isInGracePeriod) {
-          // No pitch detected and grace period over, apply gravity
-          newVelocity = prev.velocity + GRAVITY
+          // No pitch detected and grace period over, apply gravity (scaled with BPM)
+          const bpmScaledGravity = GRAVITY * bpmSettings.speed
+          newVelocity = prev.velocity + bpmScaledGravity
           newY = prev.y + newVelocity
         } else {
           // In grace period, bird stays in place
@@ -663,8 +668,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       if (gameState === 'playing') {
         setPipes(prev => {
           const gameSpeed = GAME_SPEED_BASE * bpmSettings.speed
-          const minPipeSpacing = 120 // Reduced spacing between pipes (was 250px)
-          const cycleSpacing = 200 // Extra spacing between cycles
+          // Scale spacing with BPM so spacing feels consistent across all speeds
+          const basePipeSpacing = 180 // Base spacing at BPM 60
+          const baseCycleSpacing = 300 // Base cycle spacing at BPM 60
+          const minPipeSpacing = basePipeSpacing / bpmSettings.speed // Inversely scale with speed
+          const cycleSpacing = baseCycleSpacing / bpmSettings.speed // Inversely scale with speed
           
           // First, update existing pipe positions
           let updatedPipes = prev
