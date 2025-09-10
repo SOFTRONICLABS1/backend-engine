@@ -868,28 +868,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     if (gameState === 'menu' || gameState === 'gameOver') return null
     
     return (
-      <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0, zIndex: 2 }}>
+      <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0, zIndex: 4 }}>
         {/* Transparent background so the scrolling background shows through */}
         
-        {/* Pipes */}
+        {/* Note labels in the gap - rendered on Canvas */}
         {pipes.map(pipe => (
           <React.Fragment key={pipe.id}>
-            {/* Top pipe */}
-            <Rect
-              x={pipe.x}
-              y={0}
-              width={pipe.width}
-              height={pipe.topHeight}
-              color="#228B22"
-            />
-            {/* Bottom pipe */}
-            <Rect
-              x={pipe.x}
-              y={pipe.bottomY}
-              width={pipe.width}
-              height={height - pipe.bottomY}
-              color="#228B22"
-            />
             {/* Note label background in the gap */}
             <Circle
               cx={pipe.x + pipe.width / 2}
@@ -907,8 +891,6 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             />
           </React.Fragment>
         ))}
-        
-        {/* Bird placeholder - actual bird is rendered as overlay */}
       </Canvas>
     )
   }, [gameState, width, height, pipes, bird])
@@ -1089,6 +1071,38 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       )}
       
       {renderGame}
+      
+      {/* Pipe Images - using separate top and bottom pole images */}
+      {(gameState === 'playing' || gameState === 'dying') && pipes.map(pipe => (
+        <React.Fragment key={`pipe-${pipe.id}`}>
+          {/* Top pipe */}
+          <RNImage
+            source={require('./assets/top-pole.png')}
+            style={{
+              position: 'absolute',
+              left: pipe.x,
+              top: 0,
+              width: pipe.width,
+              height: pipe.topHeight,
+              zIndex: 3,
+            }}
+            resizeMode="stretch"
+          />
+          {/* Bottom pipe */}
+          <RNImage
+            source={require('./assets/bottom-pole.png')}
+            style={{
+              position: 'absolute',
+              left: pipe.x,
+              top: pipe.bottomY,
+              width: pipe.width,
+              height: height - pipe.bottomY,
+              zIndex: 3,
+            }}
+            resizeMode="stretch"
+          />
+        </React.Fragment>
+      ))}
       
       {/* Animated Bird Overlay */}
       {(gameState === 'playing' || gameState === 'dying') && (
