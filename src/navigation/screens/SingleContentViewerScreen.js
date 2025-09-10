@@ -15,6 +15,7 @@ import { GamePreview } from '../../components/games/GamePreview';
 import contentService from '../../api/services/contentService';
 import userService from '../../api/services/userService';
 import { IconSymbol } from '../../components/ui/IconSymbol';
+import { responsivePlatformValue } from '../../utils/responsive';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -162,14 +163,18 @@ export default function SingleContentViewerScreen() {
     );
   }
 
-  const itemHeight = screenHeight - (Platform.OS === 'ios' ? 100 : 80);
+  const actualHeight = screenHeight;
+  const itemHeight = Platform.OS === 'ios' ? actualHeight + 50 : actualHeight + 20;
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { 
+      marginTop: Platform.OS === 'ios' ? -80 : 0 
+    }]}>
       <StatusBar 
         barStyle="light-content" 
         backgroundColor="transparent" 
-        translucent={true} 
+        translucent={true}
+        hidden={false}
       />
       
       {/* Back Button Overlay */}
@@ -213,30 +218,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'flex-start',
     alignItems: 'flex-start',
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: responsivePlatformValue(60, 80),
     paddingLeft: 20,
   },
   backButtonOverlay: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    left: 20,
-    zIndex: 1000,
+    top: responsivePlatformValue(105, 20),
+    left: 9,
+    zIndex: 9999,
+    elevation: 10,
   },
   backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   backArrow: {
     color: 'white',
@@ -249,7 +247,7 @@ const styles = StyleSheet.create({
   },
   gamePreviewWrapper: {
     flex: 1,
-    paddingTop: 50, // Push the entire content down by 30px to move the title lower
-    paddingBottom: 30, // Add extra padding to push the bottom title/info section lower
+    marginTop: Platform.OS === 'ios' ? 10 : 0,
+    marginBottom: Platform.OS === 'android' ? -10 : 0,
   },
 });

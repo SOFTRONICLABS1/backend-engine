@@ -11,6 +11,7 @@ const { width: screenWidth } = Dimensions.get('window');
 
 export default function MusicCreatorProfile({ 
   creatorName, 
+  username, // Add username parameter
   avatar,
   followers,
   following,
@@ -146,7 +147,8 @@ export default function MusicCreatorProfile({
   const itemWidth = (screenWidth - 80) / 3; // 3 columns with buffer - same as ProfileTabs
   
   const userData = {
-    username: creatorName || 'Unknown User',
+    displayName: creatorName || 'Unknown User', // Display name
+    username: username || creatorName || 'Unknown User', // Actual username
     avatar,
     bio: bio || 'Music creator and content maker',
     followers: realFollowersCount,
@@ -302,7 +304,7 @@ export default function MusicCreatorProfile({
 
             <View style={styles.profileInfo}>
               <View style={styles.nameRow}>
-                <Text style={[styles.fullName, { color: theme.text }]}>{userData.username}</Text>
+                <Text style={[styles.fullName, { color: theme.text }]}>{userData.displayName}</Text>
               </View>
               <Text style={[styles.email, { color: theme.textSecondary }]}>@{userData.username}</Text>
               

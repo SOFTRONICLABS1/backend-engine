@@ -424,6 +424,31 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
       {/* Tab Header */}
       <View style={[styles.tabHeader, { borderBottomColor: theme.border }]}>
         <TouchableOpacity
+          style={[styles.tab, activeTab === 'games' && styles.activeTab]}
+          onPress={() => handleTabChange('games')}
+        >
+          <View style={styles.tabContent}>
+            <View style={styles.tabRow}>
+              <Text style={[
+                styles.tabIcon, 
+                { color: activeTab === 'games' ? theme.text : theme.textSecondary }
+              ]}>
+                🎮
+              </Text>
+              <Text style={[
+                styles.tabText, 
+                { color: activeTab === 'games' ? theme.text : theme.textSecondary }
+              ]}>
+                Games
+              </Text>
+            </View>
+            {activeTab === 'games' && (
+              <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />
+            )}
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={[styles.tab, activeTab === 'posts' && styles.activeTab]}
           onPress={() => handleTabChange('posts')}
         >
@@ -468,31 +493,6 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
               </Text>
             </View>
             {activeTab === 'playlists' && (
-              <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />
-            )}
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'games' && styles.activeTab]}
-          onPress={() => handleTabChange('games')}
-        >
-          <View style={styles.tabContent}>
-            <View style={styles.tabRow}>
-              <Text style={[
-                styles.tabIcon, 
-                { color: activeTab === 'games' ? theme.text : theme.textSecondary }
-              ]}>
-                🎮
-              </Text>
-              <Text style={[
-                styles.tabText, 
-                { color: activeTab === 'games' ? theme.text : theme.textSecondary }
-              ]}>
-                Games
-              </Text>
-            </View>
-            {activeTab === 'games' && (
               <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />
             )}
           </View>
