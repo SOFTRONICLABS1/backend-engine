@@ -30,7 +30,7 @@ const RMS_GAP = 1.1
 const ENABLE_FILTER = true
 
 // Game constants
-const GRAVITY = 0.5
+const GRAVITY = 0.2
 const BIRD_SIZE = 60
 const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
