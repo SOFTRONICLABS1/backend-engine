@@ -770,7 +770,7 @@ const styles = StyleSheet.create({
   },
   bottomContent: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 50 : 20, // iOS: higher up (50px), Android: lower down (20px)
+    bottom: Platform.OS === 'ios' ? 50 : 45, // iOS: 50px, Android: moved much higher to 80px
     left: 16,
     right: 16,
   },
