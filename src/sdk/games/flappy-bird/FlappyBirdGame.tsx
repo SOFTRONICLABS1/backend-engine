@@ -56,10 +56,10 @@ const DIFFICULTY_SETTINGS = {
 
 // BPM settings
 const BPM_SETTINGS = {
-  20: { speed: 0.5, notesPerSec: 1/3 },
-  40: { speed: 1, notesPerSec: 2/3 },
-  60: { speed: 1.5, notesPerSec: 1 },
-  120: { speed: 3, notesPerSec: 2 }
+  20: { speed: 0.33, notesPerSec: 1/3 },
+  40: { speed: 0.67, notesPerSec: 2/3 },
+  60: { speed: 1, notesPerSec: 1 },
+  120: { speed: 2, notesPerSec: 2 }
 }
 
 // WAV tone generator for fallback audio
@@ -433,6 +433,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   
   // Create a new pipe based on current note
   const createPipe = useCallback(() => {
+    const isFirstPipeOfNewCycle = currentNoteIndex > 0 && (currentNoteIndex % noteSequence.length) === 0
     const note = noteSequence[currentNoteIndex % noteSequence.length]
     // Calculate gap based on note frequency and current difficulty tolerance
     const noteFrequency = note.frequency
@@ -595,14 +596,16 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       const bpmSettings = BPM_SETTINGS[bpm]
       const timePerNote = 1000 / bpmSettings.notesPerSec // milliseconds per note
       
+      
       // Update bird physics
       setBird(prev => {
         let newY = prev.y
         let newVelocity = 0
         
         if (gameState === 'dying') {
-          // During death animation, just apply gravity (bird falls down)
-          newVelocity = prev.velocity + GRAVITY * 1.5 // Faster falling during death
+          // During death animation, just apply gravity (bird falls down) - scaled with BPM
+          const bpmScaledGravity = GRAVITY * 1.5 * bpmSettings.speed // Faster falling during death
+          newVelocity = prev.velocity + bpmScaledGravity
           newY = prev.y + newVelocity
           
           // Stop falling when hitting the ground
@@ -631,13 +634,16 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           // Use the same frequency-to-Y mapping as pipes for perfect alignment
           const targetY = frequencyToY(pitch)
           
-          // Smooth transition to target Y position
-          const transitionSpeed = 0.15 // Adjust for smoother/faster transitions
+          // Use faster, more responsive transition that scales with BPM
+          const baseTransitionSpeed = 0.25
+          const bpmSpeedMultiplier = bpmSettings.speed
+          const transitionSpeed = baseTransitionSpeed * bpmSpeedMultiplier
           newY = prev.y + (targetY - prev.y) * transitionSpeed
           newVelocity = (newY - prev.y) // Calculate velocity based on Y change
         } else if (!isInGracePeriod) {
-          // No pitch detected and grace period over, apply gravity
-          newVelocity = prev.velocity + GRAVITY
+          // No pitch detected and grace period over, apply gravity (scaled with BPM)
+          const bpmScaledGravity = GRAVITY * bpmSettings.speed
+          newVelocity = prev.velocity + bpmScaledGravity
           newY = prev.y + newVelocity
         } else {
           // In grace period, bird stays in place
@@ -662,7 +668,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       if (gameState === 'playing') {
         setPipes(prev => {
           const gameSpeed = GAME_SPEED_BASE * bpmSettings.speed
-          const minPipeSpacing = 120 // Reduced spacing between pipes (was 250px)
+          // Scale spacing with BPM so spacing feels consistent across all speeds
+          const basePipeSpacing = 180 // Base spacing at BPM 60
+          const baseCycleSpacing = 300 // Base cycle spacing at BPM 60
+          const minPipeSpacing = basePipeSpacing / bpmSettings.speed // Inversely scale with speed
+          const cycleSpacing = baseCycleSpacing / bpmSettings.speed // Inversely scale with speed
           
           // First, update existing pipe positions
           let updatedPipes = prev
@@ -675,7 +685,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           // Then check if we need a new pipe
           const shouldCreatePipe = now - lastNoteTime.current >= timePerNote
           const lastPipe = updatedPipes[updatedPipes.length - 1]
-          const hasEnoughSpacing = !lastPipe || (width - lastPipe.x) >= minPipeSpacing
+          
+          // Check if next pipe will be first of a new cycle
+          const isNextPipeFirstOfNewCycle = currentNoteIndex > 0 && (currentNoteIndex % noteSequence.length) === 0
+          const requiredSpacing = isNextPipeFirstOfNewCycle ? cycleSpacing : minPipeSpacing
+          const hasEnoughSpacing = !lastPipe || (width - lastPipe.x) >= requiredSpacing
           
           if (shouldCreatePipe && hasEnoughSpacing) {
             const newPipe = createPipe()
@@ -732,6 +746,18 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             // Check if we completed a full cycle (for cycle tracking)
             if (newScore % noteSequence.length === 0 && newScore > 0) {
               cycleComplete = true
+              
+              // Calculate overall accuracy for this cycle
+              const startIndex = Math.max(0, noteAccuracies.length - noteSequence.length + 1)
+              const cycleNoteAccuracies = noteAccuracies.slice(startIndex)
+              if (cycleNoteAccuracies.length > 0) {
+                const overallCycleAccuracy = cycleNoteAccuracies.reduce((sum, acc) => sum + acc, 0) / cycleNoteAccuracies.length
+                setCycleAccuracies(prev => [...prev, overallCycleAccuracy])
+                
+                // Log cycle completion
+                const cycleNumber = Math.floor(newScore / noteSequence.length)
+                console.log(`🎯 Cycle ${cycleNumber} completed! Overall accuracy: ${overallCycleAccuracy.toFixed(1)}%`)
+              }
             }
           }
           
@@ -1043,147 +1069,83 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Render menu
   if (gameState === 'menu') {
     return (
-      <View style={styles.menuMainContainer}>
-        {/* Enhanced Background */}
-        <View style={styles.menuBackground}>
-          <View style={styles.menuGradientOverlay} />
-          
-          {/* Floating elements for atmosphere */}
-          <View style={styles.floatingElement1} />
-          <View style={styles.floatingElement2} />
-          <View style={styles.floatingElement3} />
+      <View style={styles.container}>
+        {/* Background matching score page */}
+        <View style={styles.scoreBackground}>
+          <View style={styles.scoreGradientOverlay} />
         </View>
         
         {/* Back button */}
         <TouchableOpacity
-          style={styles.enhancedBackButton}
+          style={styles.backButton}
           onPress={() => handleGameExit(navigation as any)}
         >
-          <Ionicons name="arrow-back" size={26} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         
         <View style={styles.menuContainer}>
-          {/* Enhanced Title Section */}
-          <View style={styles.titleSection}>
-            <View style={styles.titleGlow} />
-            <Text style={styles.enhancedTitle}>🎵 Pitch Bird</Text>
-            <Text style={styles.tagline}>Sing to Fly • Play to Perfect</Text>
-          </View>
+          {/* Game name at top */}
+          <Text style={styles.title}>Pitch Bird</Text>
           
-          {/* Display song title if provided */}
-          {notes?.title && (
-            <View style={styles.enhancedSongContainer}>
-              <View style={styles.songIconContainer}>
-                <Ionicons name="musical-notes" size={24} color="#FFD700" />
-              </View>
-              <View style={styles.songTextContainer}>
-                <Text style={styles.enhancedSongTitle}>{notes.title}</Text>
-                <Text style={styles.enhancedSongInfo}>
-                  {notes.key_signature} • {notes.time_signature}
-                </Text>
-              </View>
-            </View>
-          )}
-                    
-          {!isActive && (
-            <View style={styles.enhancedInstructionContainer}>
-              <View style={styles.instructionHeader}>
-                <MaterialCommunityIcons name="information" size={24} color="#FFD700" />
-                <Text style={styles.enhancedInstructionTitle}>Quick Setup</Text>
-              </View>
-              <View style={styles.instructionSteps}>
-                <View style={styles.instructionStep}>
-                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
-                  <Text style={styles.enhancedInstructionText}>Go back to Home</Text>
-                </View>
-                <View style={styles.instructionStep}>
-                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>2</Text></View>
-                  <Text style={styles.enhancedInstructionText}>Open the Tuner first</Text>
-                </View>
-                <View style={styles.instructionStep}>
-                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>3</Text></View>
-                  <Text style={styles.enhancedInstructionText}>Allow microphone access</Text>
-                </View>
-                <View style={styles.instructionStep}>
-                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>4</Text></View>
-                  <Text style={styles.enhancedInstructionText}>Return here to play!</Text>
-                </View>
-              </View>
-            </View>
-          )}
-          
-          <View style={styles.enhancedSettingsContainer}>
-            <View style={styles.settingSection}>
-              <Text style={styles.enhancedSettingsTitle}>🎯 Difficulty</Text>
-              <View style={styles.enhancedButtonRow}>
-                {(['easy', 'medium', 'hard'] as Difficulty[]).map(diff => (
-                  <TouchableOpacity
-                    key={diff}
-                    style={[
-                      styles.enhancedSettingButton,
-                      difficulty === diff && styles.enhancedSelectedButton
-                    ]}
-                    onPress={() => setDifficulty(diff)}
-                  >
-                    <Text style={[
-                      styles.enhancedButtonText,
-                      difficulty === diff && styles.enhancedSelectedButtonText
-                    ]}>
-                      {diff.toUpperCase()}
-                    </Text>
-                    <View style={[
-                      styles.buttonGlow,
-                      difficulty === diff && styles.selectedButtonGlow
-                    ]} />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </View>
-            
-            <View style={styles.settingSection}>
-              <Text style={styles.enhancedSettingsTitle}>🎼 Tempo (BPM)</Text>
-              <View style={styles.enhancedButtonRow}>
-                {([20, 40, 60, 120] as BPM[]).map(bpmValue => (
-                  <TouchableOpacity
-                    key={bpmValue}
-                    style={[
-                      styles.enhancedSettingButton,
-                      bpm === bpmValue && styles.enhancedSelectedButton
-                    ]}
-                    onPress={() => setBpm(bpmValue)}
-                  >
-                    <Text style={[
-                      styles.enhancedButtonText,
-                      bpm === bpmValue && styles.enhancedSelectedButtonText
-                    ]}>
-                      {bpmValue}
-                    </Text>
-                    <View style={[
-                      styles.buttonGlow,
-                      bpm === bpmValue && styles.selectedButtonGlow
-                    ]} />
-                  </TouchableOpacity>
-                ))}
-              </View>
+          {/* Difficulty buttons - 3 horizontally aligned */}
+          <View style={styles.settingsContainer}>
+            <Text style={styles.settingsTitle}>Difficulty</Text>
+            <View style={styles.buttonRow}>
+              {(['easy', 'medium', 'hard'] as Difficulty[]).map(diff => (
+                <TouchableOpacity
+                  key={diff}
+                  style={[
+                    styles.settingButton,
+                    difficulty === diff && styles.selectedButton
+                  ]}
+                  onPress={() => setDifficulty(diff)}
+                >
+                  <Text style={[
+                    styles.buttonText,
+                    difficulty === diff && styles.selectedButtonText
+                  ]}>
+                    {diff.charAt(0).toUpperCase() + diff.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
           
-          <TouchableOpacity style={styles.enhancedPlayButton} onPress={startGame}>
-            <View style={styles.playButtonGlow} />
-            <View style={styles.playButtonContent}>
-              <Ionicons name="play" size={36} color="#fff" />
-              <Text style={styles.enhancedPlayButtonText}>START GAME</Text>
+          {/* BPM buttons - horizontally aligned */}
+          <View style={styles.settingsContainer}>
+            <Text style={styles.settingsTitle}>BPM</Text>
+            <View style={styles.buttonRow}>
+              {([20, 40, 60, 120] as BPM[]).map(bpmValue => (
+                <TouchableOpacity
+                  key={bpmValue}
+                  style={[
+                    styles.settingButton,
+                    bpm === bpmValue && styles.selectedButton
+                  ]}
+                  onPress={() => setBpm(bpmValue)}
+                >
+                  <Text style={[
+                    styles.buttonText,
+                    bpm === bpmValue && styles.selectedButtonText
+                  ]}>
+                    {bpmValue}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
-            <View style={styles.playButtonShine} />
+          </View>
+          
+          {/* Start game button at bottom */}
+          <TouchableOpacity style={styles.playButton} onPress={startGame}>
+            <Ionicons name="play" size={20} color="#fff" />
+            <Text style={styles.playButtonText}>Start Game</Text>
           </TouchableOpacity>
           
           {!isActive && (
-            <View style={styles.enhancedWarningContainer}>
-              <View style={styles.warningIconContainer}>
-                <MaterialCommunityIcons name="microphone-off" size={28} color="#FF6B6B" />
-              </View>
-              <Text style={styles.enhancedWarningText}>
-                {micAccess !== "granted" ? "🎤 Microphone access required" : "🔄 Initializing microphone..."}
+            <View style={styles.warningContainer}>
+              <MaterialCommunityIcons name="microphone-off" size={20} color="#ff6b6b" />
+              <Text style={styles.warningText}>
+                {micAccess !== "granted" ? "Microphone access required" : "Initializing microphone..."}
               </Text>
             </View>
           )}
@@ -1257,41 +1219,43 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
                 <Text style={styles.accuracyCardDescription}>Completed</Text>
               </View>
               
-              {/* Overall Accuracy Card */}
-              <View style={[styles.accuracyCard, styles.overallAccuracyCard]}>
-                <View style={styles.accuracyCardHeader}>
-                  <Ionicons name="trophy" size={20} color="#FFD700" />
-                  <Text style={styles.accuracyCardTitle}>Overall</Text>
+              {/* Overall Accuracy Card - Only show when cycles completed > 0 */}
+              {cycle > 0 && (
+                <View style={[styles.accuracyCard, styles.overallAccuracyCard]}>
+                  <View style={styles.accuracyCardHeader}>
+                    <Ionicons name="trophy" size={20} color="#FFD700" />
+                    <Text style={styles.accuracyCardTitle}>Overall</Text>
+                  </View>
+                  {(() => {
+                    const accuracy = getOverallAccuracy()
+                    if (accuracy.cycleAccuracy !== null) {
+                      return (
+                        <>
+                          <Text style={styles.overallAccuracyValue}>
+                            {accuracy.cycleAccuracy.toFixed(1)}%
+                          </Text>
+                          <Text style={styles.accuracyCardDescription}>Cycle Average</Text>
+                        </>
+                      )
+                    } else if (accuracy.noteAccuracy !== null) {
+                      return (
+                        <>
+                          <Text style={styles.overallAccuracyValue}>
+                            {accuracy.noteAccuracy.toFixed(1)}%
+                          </Text>
+                          <Text style={styles.accuracyCardDescription}>Note Average</Text>
+                        </>
+                      )
+                    }
+                    return (
+                      <>
+                        <Text style={styles.overallAccuracyValue}>--</Text>
+                        <Text style={styles.accuracyCardDescription}>No Data</Text>
+                      </>
+                    )
+                  })()}
                 </View>
-                {(() => {
-                  const accuracy = getOverallAccuracy()
-                  if (accuracy.cycleAccuracy !== null) {
-                    return (
-                      <>
-                        <Text style={styles.overallAccuracyValue}>
-                          {accuracy.cycleAccuracy.toFixed(1)}%
-                        </Text>
-                        <Text style={styles.accuracyCardDescription}>Cycle Average</Text>
-                      </>
-                    )
-                  } else if (accuracy.noteAccuracy !== null) {
-                    return (
-                      <>
-                        <Text style={styles.overallAccuracyValue}>
-                          {accuracy.noteAccuracy.toFixed(1)}%
-                        </Text>
-                        <Text style={styles.accuracyCardDescription}>Note Average</Text>
-                      </>
-                    )
-                  }
-                  return (
-                    <>
-                      <Text style={styles.overallAccuracyValue}>--</Text>
-                      <Text style={styles.accuracyCardDescription}>No Data</Text>
-                    </>
-                  )
-                })()}
-              </View>
+              )}
             </View>
           </View>
           
@@ -1477,6 +1441,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         </View>
       )}
       
+      
       <TouchableOpacity style={styles.pauseButton} onPress={resetGame}>
         <Ionicons name="pause" size={20} color="#fff" />
       </TouchableOpacity>
@@ -1515,9 +1480,9 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 48,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#fff',
     textAlign: 'center',
-    marginBottom: 10,
+    marginBottom: 30,
   },
   subtitle: {
     fontSize: 18,
@@ -1549,7 +1514,7 @@ const styles = StyleSheet.create({
   settingsTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2c3e50',
+    color: '#fff',
     marginBottom: 15,
     marginTop: 20,
   },
