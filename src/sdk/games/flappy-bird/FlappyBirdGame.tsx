@@ -193,6 +193,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [isInitializing, setIsInitializing] = useState(true)
   const [backgroundOffset, setBackgroundOffset] = useState(0) // For scrolling background
   
+  // Pitch accuracy tracking
+  const [noteAccuracies, setNoteAccuracies] = useState<number[]>([]) // Accuracy per note
+  const [cycleAccuracies, setCycleAccuracies] = useState<number[]>([]) // Accuracy per cycle
+  const [currentNoteAccuracy, setCurrentNoteAccuracy] = useState<number>(0) // Current note being tracked
+  
   // Settings
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [bpm, setBpm] = useState<BPM>(60)
@@ -204,6 +209,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const gameStartTime = useRef<number>(0)
   const currentToleranceRef = useRef<number>(DIFFICULTY_SETTINGS.easy.frequencyTolerance) // Tolerance for current difficulty
   const deathAnimationTimer = useRef<NodeJS.Timeout | null>(null)
+  
+  // Accuracy tracking refs
+  const currentPipeForAccuracy = useRef<Pipe | null>(null) // Current pipe being measured for accuracy
+  const accuracySamples = useRef<{frequency: number, timestamp: number}[]>([]) // Pitch samples for current note
   
   // Process notes from payload or use default sequence
   const noteSequence: Note[] = useMemo(() => {
@@ -357,6 +366,70 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     const normalized = clampedFreq / maxFreq
     return height - (normalized * height)
   }, [height])
+  
+  // Pitch accuracy calculation functions
+  const calculateNoteAccuracy = useCallback((sungFrequency: number, targetFrequency: number): number => {
+    /**
+     * PITCH ACCURACY PER NOTE FORMULA:
+     * Accuracy for a note = max(0, (1 - (absolute value of (sung frequency - target frequency) / target frequency)) × 100)
+     * 
+     * Example: Sung 105Hz, Target 120Hz
+     * Accuracy = max(0, (1 - |105 - 120| / 120) × 100) = max(0, (1 - 15/120) × 100) = 87.5%
+     */
+    const frequencyDifference = Math.abs(sungFrequency - targetFrequency)
+    const relativeError = frequencyDifference / targetFrequency
+    const accuracy = Math.max(0, (1 - relativeError) * 100)
+    return accuracy
+  }, [])
+  
+  const calculateCycleAccuracy = useCallback((noteAccuraciesInCycle: number[]): number => {
+    if (noteAccuraciesInCycle.length === 0) return 0
+    /**
+     * PITCH ACCURACY PER CYCLE FORMULA:
+     * Accuracy for a cycle = (sum of all note accuracies in the cycle) / (number of notes in the cycle)
+     * 
+     * Example: Note accuracies [87.5, 92.3, 88.1, 90.4, 91.7] in a 5-note cycle
+     * Cycle Accuracy = (87.5 + 92.3 + 88.1 + 90.4 + 91.7) / 5 = 450.0 / 5 = 90.0%
+     * 
+     * IMPORTANT: Only completed cycles are included. Incomplete cycles are excluded.
+     */
+    const sum = noteAccuraciesInCycle.reduce((acc, accuracy) => acc + accuracy, 0)
+    return sum / noteAccuraciesInCycle.length
+  }, [])
+  
+  const getOverallAccuracy = useCallback((): { noteAccuracy: number | null, cycleAccuracy: number | null } => {
+    /**
+     * OVERALL ACCURACY CALCULATION LOGIC:
+     * 
+     * Priority 1: If user completed ≥1 cycle, show CYCLE ACCURACY
+     * - Formula: (sum of all completed cycle accuracies) / (number of completed cycles)
+     * - Excludes incomplete cycles
+     * 
+     * Priority 2: If user has notes but no completed cycles, show NOTE ACCURACY  
+     * - Formula: (sum of note accuracies from completed cycles only) / (number of notes from completed cycles)
+     * - Excludes notes from incomplete cycles
+     * 
+     * Priority 3: If no data, show null
+     */
+    
+    // Priority 1: Use cycle accuracy if available (user completed at least one full cycle)
+    if (cycleAccuracies.length > 0) {
+      const overallCycleAccuracy = cycleAccuracies.reduce((acc, accuracy) => acc + accuracy, 0) / cycleAccuracies.length
+      return { noteAccuracy: null, cycleAccuracy: overallCycleAccuracy }
+    }
+    
+    // Priority 2: Use note accuracy from completed cycles only (exclude incomplete cycles)
+    const completedCycles = Math.floor(noteAccuracies.length / noteSequence.length)
+    if (completedCycles > 0) {
+      // Only use notes from completed cycles, exclude any incomplete cycle notes
+      const completedCycleNotes = noteAccuracies.slice(0, completedCycles * noteSequence.length)
+      const overallNoteAccuracy = completedCycleNotes.reduce((acc, accuracy) => acc + accuracy, 0) / completedCycleNotes.length
+      return { noteAccuracy: overallNoteAccuracy, cycleAccuracy: null }
+    }
+    
+    // Priority 3: No completed cycles, no overall accuracy to show
+    return { noteAccuracy: null, cycleAccuracy: null }
+  }, [noteAccuracies, cycleAccuracies, noteSequence.length])
   
   // Create a new pipe based on current note
   const createPipe = useCallback(() => {
@@ -621,10 +694,40 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         let cycleComplete = false
         
         const updatedPipes = prev.map(pipe => {
+          // Track accuracy while bird is in pipe area
+          if (bird.x + BIRD_SIZE > pipe.x && bird.x < pipe.x + pipe.width && pitch > 0) {
+            // Bird is in pipe area and singing - collect accuracy sample
+            if (currentPipeForAccuracy.current?.id !== pipe.id) {
+              // Starting to track a new pipe
+              currentPipeForAccuracy.current = pipe
+              accuracySamples.current = []
+            }
+            
+            // Add current pitch sample
+            accuracySamples.current.push({
+              frequency: pitch,
+              timestamp: now
+            })
+          }
+          
           // Check if bird passed pipe
           if (!pipe.passed && bird.x > pipe.x + pipe.width) {
             pipe.passed = true
             newScore++
+            
+            // Calculate accuracy for this note if we have samples
+            if (currentPipeForAccuracy.current?.id === pipe.id && accuracySamples.current.length > 0) {
+              // Calculate average sung frequency for this note
+              const avgSungFreq = accuracySamples.current.reduce((sum, sample) => sum + sample.frequency, 0) / accuracySamples.current.length
+              const noteAccuracy = calculateNoteAccuracy(avgSungFreq, pipe.note.frequency)
+              
+              // Add to note accuracies
+              setNoteAccuracies(prev => [...prev, noteAccuracy])
+              
+              // Clear samples for next note
+              accuracySamples.current = []
+              currentPipeForAccuracy.current = null
+            }
             
             // Check if we completed a full cycle (for cycle tracking)
             if (newScore % noteSequence.length === 0 && newScore > 0) {
@@ -665,7 +768,18 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         }
         
         if (cycleComplete) {
-          setCycle(prev => prev + 1)
+          setCycle(prev => {
+            const newCycleCount = prev + 1
+            
+            // Calculate cycle accuracy from the last noteSequence.length notes
+            const lastNoteAccuracies = noteAccuracies.slice(-noteSequence.length)
+            if (lastNoteAccuracies.length === noteSequence.length) {
+              const cycleAccuracy = calculateCycleAccuracy(lastNoteAccuracies)
+              setCycleAccuracies(prevCycles => [...prevCycles, cycleAccuracy])
+            }
+            
+            return newCycleCount
+          })
         }
         
         return updatedPipes
@@ -814,6 +928,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setCycle(0)
     setCurrentNoteIndex(0)
     setBackgroundOffset(0)
+    // Reset accuracy tracking
+    setNoteAccuracies([])
+    setCycleAccuracies([])
+    setCurrentNoteAccuracy(0)
+    currentPipeForAccuracy.current = null
+    accuracySamples.current = []
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -851,6 +971,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setCycle(0)
     setCurrentNoteIndex(0)
     setBackgroundOffset(0)
+    // Reset accuracy tracking
+    setNoteAccuracies([])
+    setCycleAccuracies([])
+    setCurrentNoteAccuracy(0)
+    currentPipeForAccuracy.current = null
+    accuracySamples.current = []
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -917,92 +1043,147 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Render menu
   if (gameState === 'menu') {
     return (
-      <View style={styles.container}>
+      <View style={styles.menuMainContainer}>
+        {/* Enhanced Background */}
+        <View style={styles.menuBackground}>
+          <View style={styles.menuGradientOverlay} />
+          
+          {/* Floating elements for atmosphere */}
+          <View style={styles.floatingElement1} />
+          <View style={styles.floatingElement2} />
+          <View style={styles.floatingElement3} />
+        </View>
+        
         {/* Back button */}
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.enhancedBackButton}
           onPress={() => handleGameExit(navigation as any)}
         >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={26} color="#fff" />
         </TouchableOpacity>
         
         <View style={styles.menuContainer}>
-          <Text style={styles.title}>Flappy Bird</Text>
+          {/* Enhanced Title Section */}
+          <View style={styles.titleSection}>
+            <View style={styles.titleGlow} />
+            <Text style={styles.enhancedTitle}>🎵 Pitch Bird</Text>
+            <Text style={styles.tagline}>Sing to Fly • Play to Perfect</Text>
+          </View>
           
           {/* Display song title if provided */}
           {notes?.title && (
-            <View style={styles.songContainer}>
-              <Text style={styles.songTitle}>♪ {notes.title}</Text>
-              <Text style={styles.songInfo}>
-                {notes.key_signature} • {notes.time_signature}
-              </Text>
+            <View style={styles.enhancedSongContainer}>
+              <View style={styles.songIconContainer}>
+                <Ionicons name="musical-notes" size={24} color="#FFD700" />
+              </View>
+              <View style={styles.songTextContainer}>
+                <Text style={styles.enhancedSongTitle}>{notes.title}</Text>
+                <Text style={styles.enhancedSongInfo}>
+                  {notes.key_signature} • {notes.time_signature}
+                </Text>
+              </View>
             </View>
           )}
                     
           {!isActive && (
-            <View style={styles.instructionContainer}>
-              <Text style={styles.instructionTitle}>How to start:</Text>
-              <Text style={styles.instructionText}>1. Go back to Home</Text>
-              <Text style={styles.instructionText}>2. Open the Tuner first</Text>
-              <Text style={styles.instructionText}>3. Allow microphone access</Text>
-              <Text style={styles.instructionText}>4. Return here to play!</Text>
+            <View style={styles.enhancedInstructionContainer}>
+              <View style={styles.instructionHeader}>
+                <MaterialCommunityIcons name="information" size={24} color="#FFD700" />
+                <Text style={styles.enhancedInstructionTitle}>Quick Setup</Text>
+              </View>
+              <View style={styles.instructionSteps}>
+                <View style={styles.instructionStep}>
+                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>1</Text></View>
+                  <Text style={styles.enhancedInstructionText}>Go back to Home</Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>2</Text></View>
+                  <Text style={styles.enhancedInstructionText}>Open the Tuner first</Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>3</Text></View>
+                  <Text style={styles.enhancedInstructionText}>Allow microphone access</Text>
+                </View>
+                <View style={styles.instructionStep}>
+                  <View style={styles.stepNumber}><Text style={styles.stepNumberText}>4</Text></View>
+                  <Text style={styles.enhancedInstructionText}>Return here to play!</Text>
+                </View>
+              </View>
             </View>
           )}
           
-          <View style={styles.settingsContainer}>
-            <Text style={styles.settingsTitle}>Difficulty</Text>
-            <View style={styles.buttonRow}>
-              {(['easy', 'medium', 'hard'] as Difficulty[]).map(diff => (
-                <TouchableOpacity
-                  key={diff}
-                  style={[
-                    styles.settingButton,
-                    difficulty === diff && styles.selectedButton
-                  ]}
-                  onPress={() => setDifficulty(diff)}
-                >
-                  <Text style={[
-                    styles.buttonText,
-                    difficulty === diff && styles.selectedButtonText
-                  ]}>
-                    {diff.toUpperCase()}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          <View style={styles.enhancedSettingsContainer}>
+            <View style={styles.settingSection}>
+              <Text style={styles.enhancedSettingsTitle}>🎯 Difficulty</Text>
+              <View style={styles.enhancedButtonRow}>
+                {(['easy', 'medium', 'hard'] as Difficulty[]).map(diff => (
+                  <TouchableOpacity
+                    key={diff}
+                    style={[
+                      styles.enhancedSettingButton,
+                      difficulty === diff && styles.enhancedSelectedButton
+                    ]}
+                    onPress={() => setDifficulty(diff)}
+                  >
+                    <Text style={[
+                      styles.enhancedButtonText,
+                      difficulty === diff && styles.enhancedSelectedButtonText
+                    ]}>
+                      {diff.toUpperCase()}
+                    </Text>
+                    <View style={[
+                      styles.buttonGlow,
+                      difficulty === diff && styles.selectedButtonGlow
+                    ]} />
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
             
-            <Text style={styles.settingsTitle}>BPM</Text>
-            <View style={styles.buttonRow}>
-              {([20, 40, 60, 120] as BPM[]).map(bpmValue => (
-                <TouchableOpacity
-                  key={bpmValue}
-                  style={[
-                    styles.settingButton,
-                    bpm === bpmValue && styles.selectedButton
-                  ]}
-                  onPress={() => setBpm(bpmValue)}
-                >
-                  <Text style={[
-                    styles.buttonText,
-                    bpm === bpmValue && styles.selectedButtonText
-                  ]}>
-                    {bpmValue}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+            <View style={styles.settingSection}>
+              <Text style={styles.enhancedSettingsTitle}>🎼 Tempo (BPM)</Text>
+              <View style={styles.enhancedButtonRow}>
+                {([20, 40, 60, 120] as BPM[]).map(bpmValue => (
+                  <TouchableOpacity
+                    key={bpmValue}
+                    style={[
+                      styles.enhancedSettingButton,
+                      bpm === bpmValue && styles.enhancedSelectedButton
+                    ]}
+                    onPress={() => setBpm(bpmValue)}
+                  >
+                    <Text style={[
+                      styles.enhancedButtonText,
+                      bpm === bpmValue && styles.enhancedSelectedButtonText
+                    ]}>
+                      {bpmValue}
+                    </Text>
+                    <View style={[
+                      styles.buttonGlow,
+                      bpm === bpmValue && styles.selectedButtonGlow
+                    ]} />
+                  </TouchableOpacity>
+                ))}
+              </View>
             </View>
           </View>
           
-          <TouchableOpacity style={styles.playButton} onPress={startGame}>
-            <Ionicons name="play" size={32} color="#fff" />
-            <Text style={styles.playButtonText}>START</Text>
+          <TouchableOpacity style={styles.enhancedPlayButton} onPress={startGame}>
+            <View style={styles.playButtonGlow} />
+            <View style={styles.playButtonContent}>
+              <Ionicons name="play" size={36} color="#fff" />
+              <Text style={styles.enhancedPlayButtonText}>START GAME</Text>
+            </View>
+            <View style={styles.playButtonShine} />
           </TouchableOpacity>
           
           {!isActive && (
-            <View style={styles.warningContainer}>
-              <MaterialCommunityIcons name="microphone-off" size={24} color="#ff6b6b" />
-              <Text style={styles.warningText}>
-                {micAccess !== "granted" ? "Microphone access denied" : "Microphone is starting..."}
+            <View style={styles.enhancedWarningContainer}>
+              <View style={styles.warningIconContainer}>
+                <MaterialCommunityIcons name="microphone-off" size={28} color="#FF6B6B" />
+              </View>
+              <Text style={styles.enhancedWarningText}>
+                {micAccess !== "granted" ? "🎤 Microphone access required" : "🔄 Initializing microphone..."}
               </Text>
             </View>
           )}
@@ -1014,20 +1195,119 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Render game over screen
   if (gameState === 'gameOver') {
     return (
-      <View style={styles.container}>
-        <View style={styles.gameOverContainer}>
-          <Text style={styles.gameOverTitle}>Game Over!</Text>
-          <Text style={styles.scoreText}>Score: {score}</Text>
-          {cycle > 0 && (
-            <Text style={styles.cycleText}>Cycles Completed: {cycle}</Text>
-          )}
+      <View style={styles.scoreMainContainer}>
+        {/* Enhanced Background */}
+        <View style={styles.scoreBackground}>
+          <View style={styles.scoreGradientOverlay} />
           
-          <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.actionButton} onPress={startGame}>
-              <Text style={styles.actionButtonText}>PLAY AGAIN</Text>
+          {/* Floating score elements */}
+          <View style={styles.scoreFloatingElement1} />
+          <View style={styles.scoreFloatingElement2} />
+        </View>
+        
+        <View style={styles.enhancedGameOverContainer}>
+          {/* Enhanced Title Section */}
+          <View style={styles.gameOverTitleSection}>
+            <View style={styles.gameOverTitleGlow} />
+            <Text style={styles.enhancedGameOverTitle}>🎵 Game Complete!</Text>
+            <View style={styles.gameOverSubtitleContainer}>
+              <Ionicons name="trophy" size={20} color="#FFD700" />
+              <Text style={styles.gameOverSubtitle}>Your Performance Summary</Text>
+            </View>
+          </View>
+
+          {/* Enhanced Score Display */}
+          <View style={styles.mainScoreContainer}>
+            <View style={styles.scoreIconContainer}>
+              <Ionicons name="musical-notes" size={32} color="#FFD700" />
+            </View>
+            <Text style={styles.enhancedScoreText}>{score}</Text>
+            <Text style={styles.scoreLabel}>Notes Completed</Text>
+          </View>
+          
+          {/* Enhanced Accuracy Display */}
+          <View style={styles.enhancedAccuracySection}>
+            <View style={styles.accuracyHeader}>
+              <Ionicons name="analytics" size={24} color="#4CAF50" />
+              <Text style={styles.accuracySectionTitle}>Accuracy Breakdown</Text>
+            </View>
+            
+            <View style={styles.accuracyGrid}>
+              {/* Note Accuracy Card */}
+              {noteAccuracies.length > 0 && (
+                <View style={styles.accuracyCard}>
+                  <View style={styles.accuracyCardHeader}>
+                    <Ionicons name="musical-note" size={20} color="#2196F3" />
+                    <Text style={styles.accuracyCardTitle}>Note Accuracy</Text>
+                  </View>
+                  <Text style={styles.accuracyCardValue}>
+                    {(noteAccuracies.reduce((sum, acc) => sum + acc, 0) / noteAccuracies.length).toFixed(1)}%
+                  </Text>
+                  <Text style={styles.accuracyCardDescription}>Average per note</Text>
+                </View>
+              )}
+              
+              {/* Cycles Completed Card */}
+              <View style={styles.accuracyCard}>
+                <View style={styles.accuracyCardHeader}>
+                  <Ionicons name="refresh" size={20} color="#FF9800" />
+                  <Text style={styles.accuracyCardTitle}>Cycles</Text>
+                </View>
+                <Text style={styles.accuracyCardValue}>{cycle}</Text>
+                <Text style={styles.accuracyCardDescription}>Completed</Text>
+              </View>
+              
+              {/* Overall Accuracy Card */}
+              <View style={[styles.accuracyCard, styles.overallAccuracyCard]}>
+                <View style={styles.accuracyCardHeader}>
+                  <Ionicons name="trophy" size={20} color="#FFD700" />
+                  <Text style={styles.accuracyCardTitle}>Overall</Text>
+                </View>
+                {(() => {
+                  const accuracy = getOverallAccuracy()
+                  if (accuracy.cycleAccuracy !== null) {
+                    return (
+                      <>
+                        <Text style={styles.overallAccuracyValue}>
+                          {accuracy.cycleAccuracy.toFixed(1)}%
+                        </Text>
+                        <Text style={styles.accuracyCardDescription}>Cycle Average</Text>
+                      </>
+                    )
+                  } else if (accuracy.noteAccuracy !== null) {
+                    return (
+                      <>
+                        <Text style={styles.overallAccuracyValue}>
+                          {accuracy.noteAccuracy.toFixed(1)}%
+                        </Text>
+                        <Text style={styles.accuracyCardDescription}>Note Average</Text>
+                      </>
+                    )
+                  }
+                  return (
+                    <>
+                      <Text style={styles.overallAccuracyValue}>--</Text>
+                      <Text style={styles.accuracyCardDescription}>No Data</Text>
+                    </>
+                  )
+                })()}
+              </View>
+            </View>
+          </View>
+          
+          <View style={styles.enhancedButtonRow}>
+            <TouchableOpacity style={styles.enhancedActionButton} onPress={startGame}>
+              <View style={styles.actionButtonGlow} />
+              <View style={styles.actionButtonContent}>
+                <Ionicons name="refresh" size={24} color="#fff" />
+                <Text style={styles.enhancedActionButtonText}>PLAY AGAIN</Text>
+              </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.actionButton} onPress={resetGame}>
-              <Text style={styles.actionButtonText}>MENU</Text>
+            <TouchableOpacity style={[styles.enhancedActionButton, styles.menuActionButton]} onPress={resetGame}>
+              <View style={styles.actionButtonContent}>
+                <Ionicons name="home" size={24} color="#fff" />
+                <Text style={styles.enhancedActionButtonText}>MENU</Text>
+              </View>
             </TouchableOpacity>
           </View>
         </View>
@@ -1173,6 +1453,27 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
               </>
             )}
           </View>
+          
+          {/* Accuracy Container */}
+          {(() => {
+            const accuracy = getOverallAccuracy()
+            if (accuracy.cycleAccuracy !== null || accuracy.noteAccuracy !== null) {
+              return (
+                <View style={styles.accuracyContainer}>
+                  {accuracy.cycleAccuracy !== null ? (
+                    <Text style={styles.accuracyLabel}>
+                      Cycle: {accuracy.cycleAccuracy.toFixed(1)}%
+                    </Text>
+                  ) : (
+                    <Text style={styles.accuracyLabel}>
+                      Note: {accuracy.noteAccuracy!.toFixed(1)}%
+                    </Text>
+                  )}
+                </View>
+              )
+            }
+            return null
+          })()}
         </View>
       )}
       
@@ -1395,6 +1696,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignSelf: 'flex-start',
   },
+  accuracyContainer: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
   gameScore: {
     color: '#fff',
     fontSize: 18,
@@ -1415,10 +1723,36 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: 'bold',
   },
+  accuracyLabel: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   pitchIndicator: {
     fontSize: 10,
     marginTop: 3,
     fontWeight: 'bold',
+  },
+  accuracySection: {
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    padding: 20,
+    borderRadius: 12,
+    marginVertical: 20,
+    alignItems: 'center' as const,
+  },
+  accuracyDetailText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginBottom: 8,
+    fontWeight: 'bold',
+    textAlign: 'center' as const,
+  },
+  accuracyMainText: {
+    fontSize: 22,
+    color: '#FFD700',
+    marginTop: 10,
+    fontWeight: 'bold',
+    textAlign: 'center' as const,
   },
   pauseButton: {
     position: 'absolute',
@@ -1427,5 +1761,545 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.7)',
     padding: 10,
     borderRadius: 20,
+  },
+
+  // Enhanced Menu Styles
+  menuMainContainer: {
+    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  menuBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#4A90E2',
+  },
+  menuGradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  },
+  floatingElement1: {
+    position: 'absolute',
+    top: '20%',
+    left: '10%',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  floatingElement2: {
+    position: 'absolute',
+    top: '60%',
+    right: '15%',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 215, 0, 0.15)',
+  },
+  floatingElement3: {
+    position: 'absolute',
+    bottom: '25%',
+    left: '20%',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+  },
+  enhancedBackButton: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    width: 48,
+    height: 48,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  titleSection: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  titleGlow: {
+    position: 'absolute',
+    width: 200,
+    height: 100,
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    borderRadius: 50,
+    top: -10,
+  },
+  enhancedTitle: {
+    fontSize: 52,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 3, height: 3 },
+    textShadowRadius: 6,
+  },
+  tagline: {
+    fontSize: 18,
+    color: 'rgba(255, 255, 255, 0.8)',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
+  enhancedSongContainer: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 25,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  songIconContainer: {
+    width: 48,
+    height: 48,
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  songTextContainer: {
+    flex: 1,
+  },
+  enhancedSongTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  enhancedSongInfo: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+  },
+  enhancedInstructionContainer: {
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
+    padding: 20,
+    borderRadius: 16,
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.3)',
+  },
+  instructionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  enhancedInstructionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginLeft: 10,
+  },
+  instructionSteps: {
+    gap: 12,
+  },
+  instructionStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  stepNumber: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#FFD700',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  stepNumberText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#2c3e50',
+  },
+  enhancedInstructionText: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    flex: 1,
+  },
+  enhancedSettingsContainer: {
+    marginBottom: 30,
+    gap: 25,
+  },
+  settingSection: {
+    alignItems: 'center',
+  },
+  enhancedSettingsTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 15,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  enhancedButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+    justifyContent: 'center',
+  },
+  enhancedSettingButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 12,
+    minWidth: 80,
+    position: 'relative',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  enhancedSelectedButton: {
+    backgroundColor: '#FFD700',
+    borderColor: '#FFA000',
+    transform: [{ scale: 1.05 }],
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  enhancedButtonText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontWeight: 'bold',
+    textAlign: 'center',
+    fontSize: 16,
+  },
+  enhancedSelectedButtonText: {
+    color: '#2c3e50',
+    fontWeight: 'bold',
+  },
+  buttonGlow: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderRadius: 14,
+    backgroundColor: 'transparent',
+    opacity: 0,
+  },
+  selectedButtonGlow: {
+    backgroundColor: 'rgba(255, 215, 0, 0.3)',
+    opacity: 1,
+  },
+  enhancedPlayButton: {
+    backgroundColor: '#27ae60',
+    paddingHorizontal: 40,
+    paddingVertical: 18,
+    borderRadius: 30,
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  playButtonGlow: {
+    position: 'absolute',
+    top: -10,
+    left: -10,
+    right: -10,
+    bottom: -10,
+    borderRadius: 40,
+    backgroundColor: 'rgba(39, 174, 96, 0.3)',
+  },
+  playButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  enhancedPlayButtonText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  playButtonShine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: '50%',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 30,
+  },
+  enhancedWarningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    padding: 18,
+    backgroundColor: 'rgba(255, 107, 107, 0.15)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.3)',
+    gap: 12,
+  },
+  warningIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 107, 107, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  enhancedWarningText: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 16,
+    flex: 1,
+    fontWeight: '500',
+  },
+
+  // Enhanced Score Page Styles
+  scoreMainContainer: {
+    flex: 1,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  scoreBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#2c3e50',
+  },
+  scoreGradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'transparent',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  },
+  scoreFloatingElement1: {
+    position: 'absolute',
+    top: '15%',
+    right: '10%',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+  },
+  scoreFloatingElement2: {
+    position: 'absolute',
+    bottom: '20%',
+    left: '5%',
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+  },
+  enhancedGameOverContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  gameOverTitleSection: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  gameOverTitleGlow: {
+    position: 'absolute',
+    width: 250,
+    height: 80,
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    borderRadius: 40,
+    top: -5,
+  },
+  enhancedGameOverTitle: {
+    fontSize: 42,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 10,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 6,
+  },
+  gameOverSubtitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  gameOverSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontStyle: 'italic',
+  },
+  mainScoreContainer: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    padding: 25,
+    borderRadius: 20,
+    marginBottom: 30,
+    minWidth: 200,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  scoreIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255, 215, 0, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  enhancedScoreText: {
+    fontSize: 48,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginBottom: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 4,
+  },
+  scoreLabel: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontWeight: '500',
+  },
+  enhancedAccuracySection: {
+    width: '100%',
+    marginBottom: 30,
+  },
+  accuracyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+    gap: 10,
+  },
+  accuracySectionTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+  },
+  accuracyGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  accuracyCard: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    padding: 16,
+    borderRadius: 16,
+    minWidth: 100,
+    alignItems: 'center',
+    flex: 1,
+    maxWidth: 120,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  overallAccuracyCard: {
+    borderWidth: 2,
+    borderColor: 'rgba(255, 215, 0, 0.3)',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+  },
+  accuracyCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 4,
+  },
+  accuracyCardTitle: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: 'rgba(255, 255, 255, 0.9)',
+  },
+  accuracyCardValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  overallAccuracyValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#FFD700',
+    marginBottom: 4,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+  accuracyCardDescription: {
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+  },
+  enhancedActionButton: {
+    backgroundColor: '#3498db',
+    paddingHorizontal: 25,
+    paddingVertical: 15,
+    borderRadius: 25,
+    margin: 8,
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  menuActionButton: {
+    backgroundColor: '#7f8c8d',
+  },
+  actionButtonGlow: {
+    position: 'absolute',
+    top: -5,
+    left: -5,
+    right: -5,
+    bottom: -5,
+    borderRadius: 30,
+    backgroundColor: 'rgba(52, 152, 219, 0.3)',
+  },
+  actionButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  enhancedActionButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 })
