@@ -418,7 +418,9 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
     
     // Calculate RMS
     DSPModule.rms(audioBuffer).then(currentRms => {
-      addRMS(currentRms);
+      // Add null check for Android compatibility
+      const validRms = (currentRms !== null && currentRms !== undefined && !isNaN(currentRms)) ? currentRms : 0;
+      addRMS(validRms);
       
       // Set parameters for pitch estimation with noise reduction
       let minFreq = MIN_FREQ;

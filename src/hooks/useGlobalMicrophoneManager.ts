@@ -209,7 +209,9 @@ const startMicrophoneStream = async (retryCount = 0) => {
         try {
           // Calculate RMS
           const rms = await DSPModule.rms(buffer.samples);
-          rmsQueue.push(rms);
+          // Add null check for Android compatibility
+          const validRms = (rms !== null && rms !== undefined && !isNaN(rms)) ? rms : 0;
+          rmsQueue.push(validRms);
           if (rmsQueue.length > 10) rmsQueue.shift(); // Keep last 10 RMS values
           
           // Pitch detection
@@ -550,7 +552,7 @@ export const useGlobalMicrophone = () => {
   }, []);
 
   // Check if data is fresh (within last 2 seconds)
-  const isDataFresh = (Date.now() - pitchData.timestamp) < 2000;
+  const isDataFresh = (Date.now() - (pitchData?.timestamp ?? 0)) < 2000;
 
   const reinitialize = useCallback(async () => {
     return await reinitializeMicrophone();
@@ -561,13 +563,13 @@ export const useGlobalMicrophone = () => {
   }, []);
 
   return {
-    // Pitch data
-    pitch: pitchData.pitch,
-    rms: pitchData.rms,
-    audioBuffer: pitchData.audioBuffer,
-    bufferId: pitchData.bufferId,
-    sampleRate: pitchData.sampleRate,
-    timestamp: pitchData.timestamp,
+    // Pitch data - add null safety for Android
+    pitch: pitchData?.pitch ?? -1,
+    rms: pitchData?.rms ?? 0,
+    audioBuffer: pitchData?.audioBuffer ?? [],
+    bufferId: pitchData?.bufferId ?? 0,
+    sampleRate: pitchData?.sampleRate ?? 44100,
+    timestamp: pitchData?.timestamp ?? 0,
     
     // Status
     permissionStatus,

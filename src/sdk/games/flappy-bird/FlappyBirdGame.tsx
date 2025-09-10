@@ -182,7 +182,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [pitch, setPitch] = useState<number>(0)
   const [pitchHistory, setPitchHistory] = useState<number[]>([])
   const [rmsHistory, setRmsHistory] = useState<number[]>([])
-  const [bufferIdHistory, setBufferIdHistory] = useState<string[]>([])
+  const [bufferIdHistory, setBufferIdHistory] = useState<number[]>([])
   
   // Game state
   const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver'>('menu')
@@ -435,8 +435,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     
     // Calculate RMS
     DSPModule.rms(audioBuffer).then(currentRms => {
+      // Add null check for Android compatibility
+      const validRms = (currentRms !== null && currentRms !== undefined && !isNaN(currentRms)) ? currentRms : 0;
       // Add to RMS history
-      setRmsHistory(prev => [...prev.slice(-9), currentRms]); // Keep last 10 values
+      setRmsHistory(prev => [...prev.slice(-9), validRms]); // Keep last 10 values
       
       // Set parameters for pitch estimation with noise reduction
       let minFreq = MIN_FREQ;
