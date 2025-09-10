@@ -5,13 +5,15 @@ import { useTheme } from '../../theme/ThemeContext';
 import { GameLauncher } from '../../sdk/GameLauncher';
 import { handleGameEnd, handleGameError } from '../../utils/gameNavigation';
 import { initializeGlobalMicrophone } from '../../hooks/useGlobalMicrophoneManager';
+import HeadphoneService from '../../services/HeadphoneService';
 
 export default function GameScreen({ route, navigation }) {
   const { theme } = useTheme();
   const [gameStarted, setGameStarted] = useState(false);
+  const [headphonesConnected, setHeadphonesConnected] = useState(false);
   const { contentId, gameId, gameTitle, payload, onGameEnd, onError } = route.params || {};
 
-  // Initialize microphone when entering individual game screen
+  // Initialize microphone and headphone monitoring when entering individual game screen
   useEffect(() => {
     const initializeMicrophone = async () => {
       try {
@@ -23,8 +25,36 @@ export default function GameScreen({ route, navigation }) {
       }
     };
 
+    const initializeHeadphoneMonitoring = () => {
+      // Get initial headphone status
+      const initialStatus = HeadphoneService.getCurrentStatus();
+      setHeadphonesConnected(initialStatus.isConnected);
+      
+      // Listen for headphone changes
+      const unsubscribe = HeadphoneService.addListener((status) => {
+        console.log('🎧 GameScreen: Headphone status changed:', status);
+        setHeadphonesConnected(status.isConnected);
+        
+        if (!status.isConnected && gameStarted) {
+          Alert.alert(
+            'Headphones Disconnected',
+            'Your headphones have been disconnected. The game will pause until you reconnect them.',
+            [{ text: 'OK' }]
+          );
+          setGameStarted(false);
+        }
+      });
+      
+      return unsubscribe;
+    };
+
     initializeMicrophone();
-  }, []);
+    const unsubscribe = initializeHeadphoneMonitoring();
+    
+    return () => {
+      unsubscribe();
+    };
+  }, [gameStarted]);
 
   const handleContentLoad = (content) => {
     console.log('Game content loaded:', content);
@@ -58,6 +88,28 @@ export default function GameScreen({ route, navigation }) {
   };
 
   const handleStartGame = () => {
+    // Check if headphones are connected before starting the game
+    if (!headphonesConnected) {
+      Alert.alert(
+        'Headphones Required',
+        'You need to connect headphones to play games. Please connect your headphones and try again.',
+        [
+          { 
+            text: 'Retry', 
+            onPress: () => {
+              const status = HeadphoneService.getCurrentStatus();
+              setHeadphonesConnected(status.isConnected);
+              if (status.isConnected) {
+                handleStartGame();
+              }
+            }
+          },
+          { text: 'Cancel', onPress: () => navigation.goBack() }
+        ]
+      );
+      return;
+    }
+
     Alert.alert(
       'Game Starting!',
       `Loading ${gameTitle}...\n\nContent ID: ${contentId}\nGame ID: ${gameId}`,
@@ -101,12 +153,34 @@ export default function GameScreen({ route, navigation }) {
                 <Text style={[styles.gameDescription, { color: theme.textSecondary }]}>
                   Ready to start your gaming experience?
                 </Text>
+                
+                {/* Headphone Status Indicator */}
+                <View style={styles.headphoneStatus}>
+                  <IconSymbol 
+                    name={headphonesConnected ? "headphones" : "headphones.slash"} 
+                    size={20} 
+                    color={headphonesConnected ? theme.success || '#4CAF50' : theme.error || '#F44336'} 
+                  />
+                  <Text style={[
+                    styles.headphoneStatusText, 
+                    { color: headphonesConnected ? theme.success || '#4CAF50' : theme.error || '#F44336' }
+                  ]}>
+                    {headphonesConnected ? 'Headphones Connected' : 'Headphones Required'}
+                  </Text>
+                </View>
+                
                 <TouchableOpacity 
-                  style={[styles.startButton, { backgroundColor: theme.primary }]}
+                  style={[
+                    styles.startButton, 
+                    { backgroundColor: headphonesConnected ? theme.primary : theme.textSecondary }
+                  ]}
                   onPress={handleStartGame}
+                  disabled={!headphonesConnected}
                 >
                   <IconSymbol name="play.fill" size={24} color="white" />
-                  <Text style={styles.startButtonText}>Start Game</Text>
+                  <Text style={styles.startButtonText}>
+                    {headphonesConnected ? 'Start Game' : 'Connect Headphones First'}
+                  </Text>
                 </TouchableOpacity>
               </View>
             ) : (
@@ -182,8 +256,22 @@ const styles = StyleSheet.create({
   gameDescription: {
     fontSize: 16,
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: 20,
     paddingHorizontal: 20,
+  },
+  headphoneStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 30,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+  },
+  headphoneStatusText: {
+    marginLeft: 8,
+    fontSize: 14,
+    fontWeight: '500',
   },
   startButton: {
     flexDirection: 'row',

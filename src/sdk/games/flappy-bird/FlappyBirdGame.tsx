@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform, Image as RNImage } from "react-native"
-import { Canvas, Rect, Circle, Fill, Text as SkiaText, matchFont } from "@shopify/react-native-skia"
+import { Canvas, Rect, Circle, Text as SkiaText, matchFont } from "@shopify/react-native-skia"
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useGameScreenMicrophone } from "@/hooks/useGameScreenMicrophone"
@@ -31,26 +31,26 @@ const ENABLE_FILTER = true
 
 // Game constants
 const GRAVITY = 0.5
-const BIRD_SIZE = 50
+const BIRD_SIZE = 60
 const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
 const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
 const NOTE_TEXT_OFFSET_Y = 4 // Fixed Y offset for note text
-const HARMONIC_DISTANCE_THRESHOLD = 20 // Distance in pixels to trigger harmonics (increased for better detection)
+const HARMONIC_DISTANCE_THRESHOLD = 80 // Distance in pixels to trigger harmonics (increased for better detection)
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
   easy: { 
-    frequencyTolerance: 40, // +/- 40Hz (larger gap for easy mode)
-    circleRadius: 22, // Larger circle for easy mode
+    frequencyTolerance: 50, // +/- 40Hz (larger gap for easy mode)
+    circleRadius: 26, // Larger circle for easy mode
   },
   medium: { 
-    frequencyTolerance: 24, // +/- 20Hz
-    circleRadius: 16, // Medium circle for medium mode
+    frequencyTolerance: 30, // +/- 20Hz
+    circleRadius: 18, // Medium circle for medium mode
   },
   hard: { 
-    frequencyTolerance: 16, // +/- 12Hz
-    circleRadius: 14, // Smaller circle for hard mode
+    frequencyTolerance: 22, // +/- 12Hz
+    circleRadius: 16, // Smaller circle for hard mode
   }
 }
 
@@ -185,12 +185,13 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [bufferIdHistory, setBufferIdHistory] = useState<number[]>([])
   
   // Game state
-  const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver'>('menu')
+  const [gameState, setGameState] = useState<'menu' | 'playing' | 'dying' | 'gameOver'>('menu')
   const [bird, setBird] = useState<Bird>({ x: width * 0.2, y: height / 2, velocity: 0 })
   const [pipes, setPipes] = useState<Pipe[]>([])
   const [score, setScore] = useState(0)
   const [cycle, setCycle] = useState(0) // Track cycles in easy mode
   const [isInitializing, setIsInitializing] = useState(true)
+  const [backgroundOffset, setBackgroundOffset] = useState(0) // For scrolling background
   
   // Settings
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
@@ -202,6 +203,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const pipeIdCounter = useRef(0)
   const gameStartTime = useRef<number>(0)
   const currentToleranceRef = useRef<number>(DIFFICULTY_SETTINGS.easy.frequencyTolerance) // Tolerance for current difficulty
+  const deathAnimationTimer = useRef<NodeJS.Timeout | null>(null)
   
   // Process notes from payload or use default sequence
   const noteSequence: Note[] = useMemo(() => {
@@ -493,16 +495,27 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     });
   }, [audioBuffer, sampleRate, bufferId, gameState, isActive, pitchHistory, rmsHistory, bufferIdHistory]);
 
-  // Handle game end callback
+  // Handle game end callback - start death animation
   const handleGameEnd = useCallback(() => {
+    setGameState('dying')
+    // Start death animation timer - bird will fall for 2 seconds then show game over
+    deathAnimationTimer.current = setTimeout(() => {
+      setGameState('gameOver')
+    }, 2000)
+  }, [])
+  
+  // Final game over (after death animation)
+  const handleFinalGameOver = useCallback(() => {
+    if (deathAnimationTimer.current) {
+      clearTimeout(deathAnimationTimer.current)
+      deathAnimationTimer.current = null
+    }
     setGameState('gameOver')
-    // Don't call external onGameEnd callback to avoid popup
-    // Keep game over handling internal
   }, [])
   
   // Game loop
   useEffect(() => {
-    if (gameState !== 'playing') return
+    if (gameState !== 'playing' && gameState !== 'dying') return
     
     const gameLoop = () => {
       const now = Date.now()
@@ -514,6 +527,27 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         let newY = prev.y
         let newVelocity = 0
         
+        if (gameState === 'dying') {
+          // During death animation, just apply gravity (bird falls down)
+          newVelocity = prev.velocity + GRAVITY * 1.5 // Faster falling during death
+          newY = prev.y + newVelocity
+          
+          // Stop falling when hitting the ground
+          if (newY > height - BIRD_SIZE) {
+            newY = height - BIRD_SIZE
+            newVelocity = 0
+            // Trigger final game over when bird hits ground
+            handleFinalGameOver()
+          }
+          
+          return {
+            ...prev,
+            y: newY,
+            velocity: newVelocity
+          }
+        }
+        
+        // Normal playing physics
         // Give player 3 seconds grace period at start before gravity applies
         const gracePeriod = 3000 // 3 seconds
         const timeSinceStart = now - gameStartTime.current
@@ -538,7 +572,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           newVelocity = 0
         }
         
-        // Check boundaries
+        // Check boundaries (only during playing, not dying)
         if (newY < 0 || newY > height - BIRD_SIZE) {
           handleGameEnd()
           return prev
@@ -551,35 +585,38 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         }
       })
       
-      // Update pipes (movement, generation, and cleanup)
-      setPipes(prev => {
-        const gameSpeed = GAME_SPEED_BASE * bpmSettings.speed
-        const minPipeSpacing = 250 // Minimum pixels between pipes for better spacing
-        
-        // First, update existing pipe positions
-        let updatedPipes = prev
-          .map(pipe => ({
-            ...pipe,
-            x: pipe.x - gameSpeed
-          }))
-          .filter(pipe => pipe.x + pipe.width > -100) // Remove off-screen pipes
-        
-        // Then check if we need a new pipe
-        const shouldCreatePipe = now - lastNoteTime.current >= timePerNote
-        const lastPipe = updatedPipes[updatedPipes.length - 1]
-        const hasEnoughSpacing = !lastPipe || (width - lastPipe.x) >= minPipeSpacing
-        
-        if (shouldCreatePipe && hasEnoughSpacing) {
-          const newPipe = createPipe()
-          lastNoteTime.current = now
-          updatedPipes = [...updatedPipes, newPipe]
-        }
-        
-        return updatedPipes
-      })
+      // Update pipes (movement, generation, and cleanup) - only during playing
+      if (gameState === 'playing') {
+        setPipes(prev => {
+          const gameSpeed = GAME_SPEED_BASE * bpmSettings.speed
+          const minPipeSpacing = 120 // Reduced spacing between pipes (was 250px)
+          
+          // First, update existing pipe positions
+          let updatedPipes = prev
+            .map(pipe => ({
+              ...pipe,
+              x: pipe.x - gameSpeed
+            }))
+            .filter(pipe => pipe.x + pipe.width > -100) // Remove off-screen pipes
+          
+          // Then check if we need a new pipe
+          const shouldCreatePipe = now - lastNoteTime.current >= timePerNote
+          const lastPipe = updatedPipes[updatedPipes.length - 1]
+          const hasEnoughSpacing = !lastPipe || (width - lastPipe.x) >= minPipeSpacing
+          
+          if (shouldCreatePipe && hasEnoughSpacing) {
+            const newPipe = createPipe()
+            lastNoteTime.current = now
+            updatedPipes = [...updatedPipes, newPipe]
+          }
+          
+          return updatedPipes
+        })
+      }
       
-      // Check collisions and scoring
-      setPipes(prev => {
+      // Check collisions and scoring - only during playing
+      if (gameState === 'playing') {
+        setPipes(prev => {
         let newScore = score
         let cycleComplete = false
         
@@ -595,13 +632,29 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             }
           }
           
-          // Check collision
+          // Check collision - bird hits the actual pipe, not when in the gap
           if (
             bird.x + BIRD_SIZE > pipe.x &&
-            bird.x < pipe.x + pipe.width &&
-            (bird.y < pipe.topHeight || bird.y + BIRD_SIZE > pipe.bottomY)
+            bird.x < pipe.x + pipe.width
           ) {
-            handleGameEnd()
+            // Bird is horizontally within the pipe area
+            // Check if bird hits the top pipe OR hits the bottom pipe
+            const birdHitsTopPipe = bird.y < pipe.topHeight
+            const birdHitsBottomPipe = bird.y + BIRD_SIZE > pipe.bottomY
+            
+            if (birdHitsTopPipe || birdHitsBottomPipe) {
+              // Check if bird is singing the correct pitch within threshold
+              const tolerance = currentToleranceRef.current
+              const targetFreq = pipe.note.frequency
+              const isWithinThreshold = pitch > 0 && 
+                Math.abs(pitch - targetFreq) <= tolerance
+              
+              // Only trigger game over if NOT singing the correct pitch
+              if (!isWithinThreshold) {
+                handleGameEnd()
+              }
+              // If within threshold, allow bird to pass through the pipe!
+            }
           }
           
           return pipe
@@ -616,7 +669,14 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         }
         
         return updatedPipes
-      })
+        })
+      }
+      
+      // Update background scrolling
+      if (gameState === 'playing') {
+        const backgroundSpeed = GAME_SPEED_BASE * bpmSettings.speed * 0.3 // Slower than pipes
+        setBackgroundOffset(prev => (prev + backgroundSpeed) % width)
+      }
       
       gameLoopRef.current = requestAnimationFrame(gameLoop)
     }
@@ -628,7 +688,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         cancelAnimationFrame(gameLoopRef.current)
       }
     }
-  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd, pitch, width])
+  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd, pitch, width, handleFinalGameOver])
   
   // Harmonic proximity checker (optimized to avoid blocking main thread)
   const harmonicCheckIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -659,38 +719,59 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         
         pipes.forEach(pipe => {
           const pipeId = `pipe_${pipe.id}`
-          const pipeCenterX = pipe.x + pipe.width / 2
-          const gapCenterY = (pipe.topHeight + pipe.bottomY) / 2
+          const pipeLeftEdge = pipe.x
+          const pipeRightEdge = pipe.x + pipe.width
           
-          // Calculate distance between bird center and pipe gap center
-          const distanceX = Math.abs(birdCenterX - pipeCenterX)
-          const distanceY = Math.abs(birdCenterY - gapCenterY)
-          const totalDistance = Math.sqrt(distanceX * distanceX + distanceY * distanceY)
+          // Calculate distance from bird to pipe edges
+          const distanceToLeftEdge = birdCenterX - pipeLeftEdge
+          const distanceToRightEdge = pipeRightEdge - birdCenterX
           
-          console.log(`🎵 Pipe ${pipe.id} (${pipe.note.name}): Distance=${totalDistance.toFixed(1)}px, Threshold=${HARMONIC_DISTANCE_THRESHOLD}px`)
+          // Bird is in the trigger zone if:
+          // 1. Bird is 100px before the pipe (approaching)
+          // 2. Bird is within the pipe width
+          // 3. Bird is 100px after the pipe (leaving)
+          const isInTriggerZone = (
+            distanceToLeftEdge >= -HARMONIC_DISTANCE_THRESHOLD && // 100px before pipe
+            distanceToRightEdge >= -HARMONIC_DISTANCE_THRESHOLD    // 100px after pipe
+          )
           
-          // Check if bird is within threshold distance
-          if (totalDistance <= HARMONIC_DISTANCE_THRESHOLD) {
-            // Prevent playing the same harmonic too frequently (throttle to once per 500ms per pipe)
+          console.log(`🎵 Pipe ${pipe.id} (${pipe.note.name}): Bird=${birdCenterX.toFixed(1)}, Pipe=[${pipeLeftEdge.toFixed(1)}-${pipeRightEdge.toFixed(1)}], InZone=${isInTriggerZone}`)
+          
+          // Check if bird is in the harmonic trigger zone (play regardless of user singing)
+          if (isInTriggerZone) {
+            // BUT stop playing if user stops singing
+            if (!isPitchDetectedRef.current || pitch <= 0) {
+              // User stopped singing - stop harmonics immediately
+              if (lastHarmonicTimeRef.current[pipeId]) {
+                console.log(`🎵 STOPPING harmonics for pipe ${pipe.id} - user stopped singing`)
+                delete lastHarmonicTimeRef.current[pipeId]
+              }
+              return // Don't play harmonics
+            }
+            // Play harmonic continuously while in zone and user is singing (throttle to once per 150ms for smooth continuous play)
             const lastPlayTime = lastHarmonicTimeRef.current[pipeId] || 0
             const timeSinceLastPlay = now - lastPlayTime
             
-            console.log(`🎵 Within threshold! Time since last play: ${timeSinceLastPlay}ms`)
+            console.log(`🎵 In trigger zone with pitch detected! Pitch: ${pitch.toFixed(1)}Hz, Time since last play: ${timeSinceLastPlay}ms`)
             
-            if (timeSinceLastPlay > 500) {
-              console.log(`🎵🎸 PLAYING HARMONIC for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - distance: ${totalDistance.toFixed(1)}px`)
+            if (timeSinceLastPlay > 150) { // Reduced throttle for continuous play
+              console.log(`🎵🎸 PLAYING HARMONIC for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - in trigger zone with pitch`)
               
-              // Play harmonic immediately
+              // Play harmonic with longer duration for continuous effect
               try {
-                playGuitarHarmonic(pipe.note.frequency, 200) // Play for 200ms
+                playGuitarHarmonic(pipe.note.frequency, 300) // Longer duration for overlap
                 console.log(`🎵✅ Harmonic played successfully for ${pipe.note.name}`)
               } catch (error) {
                 console.error('🎵❌ Error playing harmonic:', error)
               }
               
               lastHarmonicTimeRef.current[pipeId] = now
-            } else {
-              console.log(`🎵 Harmonic throttled - waiting ${500 - timeSinceLastPlay}ms more`)
+            }
+          } else {
+            // Bird left the zone, reset timing for this pipe
+            if (lastHarmonicTimeRef.current[pipeId]) {
+              console.log(`🎵 Stopping harmonics for pipe ${pipe.id} - bird left zone`)
+              delete lastHarmonicTimeRef.current[pipeId]
             }
           }
         })
@@ -721,11 +802,18 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       harmonicCheckIntervalRef.current = null
     }
     
+    // Clean up any existing death animation timer
+    if (deathAnimationTimer.current) {
+      clearTimeout(deathAnimationTimer.current)
+      deathAnimationTimer.current = null
+    }
+    
     setBird({ x: width * 0.2, y: height / 2, velocity: 0 })
     setPipes([])
     setScore(0)
     setCycle(0)
     setCurrentNoteIndex(0)
+    setBackgroundOffset(0)
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -750,12 +838,19 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       harmonicCheckIntervalRef.current = null
     }
     
+    // Clean up any existing death animation timer
+    if (deathAnimationTimer.current) {
+      clearTimeout(deathAnimationTimer.current)
+      deathAnimationTimer.current = null
+    }
+    
     setGameState('menu')
     setBird({ x: width * 0.2, y: height / 2, velocity: 0 })
     setPipes([])
     setScore(0)
     setCycle(0)
     setCurrentNoteIndex(0)
+    setBackgroundOffset(0)
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -770,31 +865,15 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   
   // Render game canvas
   const renderGame = useMemo(() => {
-    if (gameState === 'menu') return null
+    if (gameState === 'menu' || gameState === 'gameOver') return null
     
     return (
-      <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0 }}>
-        <Fill color="#87CEEB" />
+      <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0, zIndex: 4 }}>
+        {/* Transparent background so the scrolling background shows through */}
         
-        {/* Pipes */}
+        {/* Note labels in the gap - rendered on Canvas */}
         {pipes.map(pipe => (
           <React.Fragment key={pipe.id}>
-            {/* Top pipe */}
-            <Rect
-              x={pipe.x}
-              y={0}
-              width={pipe.width}
-              height={pipe.topHeight}
-              color="#228B22"
-            />
-            {/* Bottom pipe */}
-            <Rect
-              x={pipe.x}
-              y={pipe.bottomY}
-              width={pipe.width}
-              height={height - pipe.bottomY}
-              color="#228B22"
-            />
             {/* Note label background in the gap */}
             <Circle
               cx={pipe.x + pipe.width / 2}
@@ -812,11 +891,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             />
           </React.Fragment>
         ))}
-        
-        {/* Bird placeholder - actual bird is rendered as overlay */}
       </Canvas>
     )
-  }, [gameState, width, height, pipes])
+  }, [gameState, width, height, pipes, bird])
   
   // Show loading screen during initialization
   if (isInitializing) {
@@ -961,67 +1038,143 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Render playing game
   return (
     <View style={styles.container}>
+      {/* Scrolling Background */}
+      {(gameState === 'playing' || gameState === 'dying') && (
+        <>
+          {/* First background image */}
+          <RNImage
+            source={require('./assets/background.jpg')}
+            style={{
+              position: 'absolute',
+              left: -backgroundOffset,
+              top: 0,
+              width: width,
+              height: height,
+              zIndex: 1,
+            }}
+            resizeMode="cover"
+          />
+          {/* Second background image for seamless scrolling */}
+          <RNImage
+            source={require('./assets/background.jpg')}
+            style={{
+              position: 'absolute',
+              left: width - backgroundOffset,
+              top: 0,
+              width: width,
+              height: height,
+              zIndex: 1,
+            }}
+            resizeMode="cover"
+          />
+        </>
+      )}
+      
       {renderGame}
       
+      {/* Pipe Images - using separate top and bottom pole images */}
+      {(gameState === 'playing' || gameState === 'dying') && pipes.map(pipe => (
+        <React.Fragment key={`pipe-${pipe.id}`}>
+          {/* Top pipe */}
+          <RNImage
+            source={require('./assets/top-pole.png')}
+            style={{
+              position: 'absolute',
+              left: pipe.x,
+              top: 0,
+              width: pipe.width,
+              height: pipe.topHeight,
+              zIndex: 3,
+            }}
+            resizeMode="stretch"
+          />
+          {/* Bottom pipe */}
+          <RNImage
+            source={require('./assets/bottom-pole.png')}
+            style={{
+              position: 'absolute',
+              left: pipe.x,
+              top: pipe.bottomY,
+              width: pipe.width,
+              height: height - pipe.bottomY,
+              zIndex: 3,
+            }}
+            resizeMode="stretch"
+          />
+        </React.Fragment>
+      ))}
+      
       {/* Animated Bird Overlay */}
-      {gameState === 'playing' && (
+      {(gameState === 'playing' || gameState === 'dying') && (
         <RNImage
           source={require('./assets/flappy-bird-gif.gif')}
           style={{
             position: 'absolute',
-            left: bird.x - 10, // Offset to center the larger bird
-            top: bird.y - 10,
-            width: BIRD_SIZE * 1.5, // 60 pixels (1.5x larger)
-            height: BIRD_SIZE * 1.5,
-            zIndex: 10,
+            left: bird.x - 5,
+            top: bird.y - 5,
+            width: BIRD_SIZE * 1.2,
+            height: BIRD_SIZE * 1.2,
+            zIndex: 5,
           }}
+          resizeMode="contain"
         />
       )}
       
-      {/* Game UI overlay */}
-      <View style={styles.gameUI}>
-        <View style={styles.scoreContainer}>
-          <Text style={styles.gameScore}>Score: {score}</Text>
-          <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
+      {/* Game UI overlay - All in top left, stacked vertically */}
+      {(gameState === 'playing' || gameState === 'dying') && (
+        <View style={[styles.gameUIContainer, { zIndex: 10 }]}>
+          {/* Score Container */}
+          <View style={styles.scoreContainer}>
+            <Text style={styles.gameScore}>Score: {score}</Text>
+          </View>
+          
+          {/* Cycle Container */}
+          <View style={styles.cycleContainer}>
+            <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
+          </View>
+          
+          {/* Pitch Info Container */}
+          <View style={styles.pitchContainer}>
+            {gameState === 'dying' ? (
+              <Text style={[styles.pitchIndicator, { color: '#ff6b6b' }]}>
+                💥 GAME OVER
+              </Text>
+            ) : (
+              <>
+                {(() => {
+                  const timeSinceStart = Date.now() - gameStartTime.current
+                  const gracePeriod = 3000
+                  const isInGracePeriod = timeSinceStart < gracePeriod
+                  
+                  if (isInGracePeriod) {
+                    const remainingTime = Math.ceil((gracePeriod - timeSinceStart) / 1000)
+                    return (
+                      <Text style={[styles.pitchIndicator, { color: '#ffd700' }]}>
+                        🛡️ Grace Period: {remainingTime}s
+                      </Text>
+                    )
+                  }
+                  
+                  if (pitch > 0) {
+                    return (
+                      <>
+                        <Text style={styles.pitchLabel}>Pitch: {pitch.toFixed(1)} Hz</Text>
+                        <Text style={[styles.pitchStatus, { 
+                          color: isPitchDetectedRef.current ? '#00ff88' : '#fff' 
+                        }]}>
+                          {isPitchDetectedRef.current ? '🎵 Flying' : '⬇️ Falling'}
+                        </Text>
+                      </>
+                    )
+                  }
+                  
+                  return <Text style={styles.pitchLabel}>Pitch: --</Text>
+                })()}
+              </>
+            )}
+          </View>
         </View>
-        
-        <View style={styles.noteInfo}>
-          <Text style={styles.currentNote}>
-            Pitch Control
-          </Text>
-          {(() => {
-            const timeSinceStart = Date.now() - gameStartTime.current
-            const gracePeriod = 3000
-            const isInGracePeriod = timeSinceStart < gracePeriod
-            
-            if (isInGracePeriod) {
-              const remainingTime = Math.ceil((gracePeriod - timeSinceStart) / 1000)
-              return (
-                <Text style={[styles.pitchIndicator, { color: '#ffd700' }]}>
-                  🛡️ Grace Period: {remainingTime}s
-                </Text>
-              )
-            }
-            
-            if (pitch > 0) {
-              return (
-                <>
-                  <Text style={styles.yourPitch}>
-                    {pitch.toFixed(1)} Hz
-                  </Text>
-                  <Text style={[styles.pitchIndicator, { 
-                    color: isPitchDetectedRef.current ? '#00ff88' : '#fff' 
-                  }]}>
-                    {isPitchDetectedRef.current ? '🎵 Pitch Control!' : '⬇️ Falling'}
-                  </Text>
-                </>
-              )
-            }
-            
-            return null
-          })()}
-        </View>
-      </View>
+      )}
       
       <TouchableOpacity style={styles.pauseButton} onPress={resetGame}>
         <Ionicons name="pause" size={20} color="#fff" />
@@ -1214,18 +1367,33 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  gameUI: {
+  gameUIContainer: {
     position: 'absolute',
     top: 60,
-    left: 80,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    left: 20,
+    flexDirection: 'column',
+    gap: 10,
   },
   scoreContainer: {
     backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
     borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  cycleContainer: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  pitchContainer: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
   },
   gameScore: {
     color: '#fff',
@@ -1234,32 +1402,18 @@ const styles = StyleSheet.create({
   },
   cycleInfo: {
     color: '#fff',
-    fontSize: 14,
-  },
-  toleranceInfo: {
-    color: '#ffd700',
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: 'bold',
   },
-  noteInfo: {
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'flex-end',
-  },
-  currentNote: {
+  pitchLabel: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  currentFreq: {
-    color: '#fff',
-    fontSize: 12,
-  },
-  yourPitch: {
-    color: '#00ff88',
-    fontSize: 12,
-    marginTop: 5,
+  pitchStatus: {
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: 'bold',
   },
   pitchIndicator: {
     fontSize: 10,

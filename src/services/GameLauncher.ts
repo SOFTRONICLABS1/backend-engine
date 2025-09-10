@@ -4,6 +4,7 @@
  */
 
 import GameRegistry, { GameConfig, GamePayload } from './GameRegistry';
+import HeadphoneService from './HeadphoneService';
 
 export interface GameLaunchConfig {
   gameId: string;
@@ -35,6 +36,14 @@ class GameLauncher {
    */
   async launchGame(payload: GamePayload, customSettings?: { [key: string]: any }): Promise<GameInstance> {
     console.log('🚀 Launching game with payload:', payload);
+
+    // Check if headphones are connected before launching the game
+    const headphoneStatus = HeadphoneService.getCurrentStatus();
+    if (!headphoneStatus.isConnected) {
+      throw new Error('Headphones must be connected to play games. Please connect your headphones and try again.');
+    }
+
+    console.log('🎧 Headphones detected:', headphoneStatus);
 
     // Get game configuration from registry
     const gameConfig = GameRegistry.getGame(payload.gameId);
@@ -86,7 +95,8 @@ class GameLauncher {
     // Game-specific processing
     switch (gameConfig.id) {
       case '2d6263d7-d4a4-4074-8be3-430120ac1cc5': // Flappy Bird
-        settings.pipeConfigs = this.processFlappyBirdMusic(musicData);
+        // FlappyBird handles its own pipe configuration based on notes
+        // No additional processing needed here
         break;
       
       // Add more games here
@@ -97,37 +107,6 @@ class GameLauncher {
     return settings;
   }
 
-  /**
-   * Process music data specifically for Flappy Bird game
-   */
-  private processFlappyBirdMusic(musicData: GamePayload['notes']): Array<{ position: number; width: number; gap: number }> {
-    const pipeConfigs: Array<{ position: number; width: number; gap: number }> = [];
-    let currentPosition = 300; // Starting position for first pipe
-
-    // Process each measure
-    musicData.measures.forEach((measure, measureIndex) => {
-      measure.notes.forEach((note, noteIndex) => {
-        // Use note duration to determine pipe width
-        const pipeWidth = Math.max(50, Math.min(150, note.duration)); // Clamp between 50-150px
-        
-        // Use pitch to determine pipe gap (higher pitch = larger gap)
-        const pitchNumber = this.pitchToNumber(note.pitch);
-        const pipeGap = Math.max(120, Math.min(250, 120 + (pitchNumber * 10))); // Clamp between 120-250px
-
-        pipeConfigs.push({
-          position: currentPosition,
-          width: pipeWidth,
-          gap: pipeGap
-        });
-
-        // Space pipes based on note beat and duration
-        currentPosition += 200 + (note.duration * 2); // Base spacing + duration-based spacing
-      });
-    });
-
-    console.log('🎵 Generated pipe configurations:', pipeConfigs);
-    return pipeConfigs;
-  }
 
   /**
    * Convert musical pitch to numeric value for calculations
