@@ -31,26 +31,26 @@ const ENABLE_FILTER = true
 
 // Game constants
 const GRAVITY = 0.5
-const BIRD_SIZE = 50
+const BIRD_SIZE = 60
 const PIPE_WIDTH_BASE = 60
 const GAME_SPEED_BASE = 2
 const NOTE_TEXT_OFFSET_X = -8 // Fixed X offset for note text
 const NOTE_TEXT_OFFSET_Y = 4 // Fixed Y offset for note text
-const HARMONIC_DISTANCE_THRESHOLD = 20 // Distance in pixels to trigger harmonics (increased for better detection)
+const HARMONIC_DISTANCE_THRESHOLD = 80 // Distance in pixels to trigger harmonics (increased for better detection)
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
   easy: { 
-    frequencyTolerance: 40, // +/- 40Hz (larger gap for easy mode)
-    circleRadius: 22, // Larger circle for easy mode
+    frequencyTolerance: 50, // +/- 40Hz (larger gap for easy mode)
+    circleRadius: 26, // Larger circle for easy mode
   },
   medium: { 
-    frequencyTolerance: 24, // +/- 20Hz
-    circleRadius: 16, // Medium circle for medium mode
+    frequencyTolerance: 30, // +/- 20Hz
+    circleRadius: 18, // Medium circle for medium mode
   },
   hard: { 
-    frequencyTolerance: 16, // +/- 12Hz
-    circleRadius: 14, // Smaller circle for hard mode
+    frequencyTolerance: 22, // +/- 12Hz
+    circleRadius: 16, // Smaller circle for hard mode
   }
 }
 
@@ -554,7 +554,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       // Update pipes (movement, generation, and cleanup)
       setPipes(prev => {
         const gameSpeed = GAME_SPEED_BASE * bpmSettings.speed
-        const minPipeSpacing = 250 // Minimum pixels between pipes for better spacing
+        const minPipeSpacing = 120 // Reduced spacing between pipes (was 250px)
         
         // First, update existing pipe positions
         let updatedPipes = prev
@@ -595,13 +595,29 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             }
           }
           
-          // Check collision
+          // Check collision - bird hits the actual pipe, not when in the gap
           if (
             bird.x + BIRD_SIZE > pipe.x &&
-            bird.x < pipe.x + pipe.width &&
-            (bird.y < pipe.topHeight || bird.y + BIRD_SIZE > pipe.bottomY)
+            bird.x < pipe.x + pipe.width
           ) {
-            handleGameEnd()
+            // Bird is horizontally within the pipe area
+            // Check if bird hits the top pipe OR hits the bottom pipe
+            const birdHitsTopPipe = bird.y < pipe.topHeight
+            const birdHitsBottomPipe = bird.y + BIRD_SIZE > pipe.bottomY
+            
+            if (birdHitsTopPipe || birdHitsBottomPipe) {
+              // Check if bird is singing the correct pitch within threshold
+              const tolerance = currentToleranceRef.current
+              const targetFreq = pipe.note.frequency
+              const isWithinThreshold = pitch > 0 && 
+                Math.abs(pitch - targetFreq) <= tolerance
+              
+              // Only trigger game over if NOT singing the correct pitch
+              if (!isWithinThreshold) {
+                handleGameEnd()
+              }
+              // If within threshold, allow bird to pass through the pipe!
+            }
           }
           
           return pipe
@@ -659,38 +675,59 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         
         pipes.forEach(pipe => {
           const pipeId = `pipe_${pipe.id}`
-          const pipeCenterX = pipe.x + pipe.width / 2
-          const gapCenterY = (pipe.topHeight + pipe.bottomY) / 2
+          const pipeLeftEdge = pipe.x
+          const pipeRightEdge = pipe.x + pipe.width
           
-          // Calculate distance between bird center and pipe gap center
-          const distanceX = Math.abs(birdCenterX - pipeCenterX)
-          const distanceY = Math.abs(birdCenterY - gapCenterY)
-          const totalDistance = Math.sqrt(distanceX * distanceX + distanceY * distanceY)
+          // Calculate distance from bird to pipe edges
+          const distanceToLeftEdge = birdCenterX - pipeLeftEdge
+          const distanceToRightEdge = pipeRightEdge - birdCenterX
           
-          console.log(`🎵 Pipe ${pipe.id} (${pipe.note.name}): Distance=${totalDistance.toFixed(1)}px, Threshold=${HARMONIC_DISTANCE_THRESHOLD}px`)
+          // Bird is in the trigger zone if:
+          // 1. Bird is 100px before the pipe (approaching)
+          // 2. Bird is within the pipe width
+          // 3. Bird is 100px after the pipe (leaving)
+          const isInTriggerZone = (
+            distanceToLeftEdge >= -HARMONIC_DISTANCE_THRESHOLD && // 100px before pipe
+            distanceToRightEdge >= -HARMONIC_DISTANCE_THRESHOLD    // 100px after pipe
+          )
           
-          // Check if bird is within threshold distance
-          if (totalDistance <= HARMONIC_DISTANCE_THRESHOLD) {
-            // Prevent playing the same harmonic too frequently (throttle to once per 500ms per pipe)
+          console.log(`🎵 Pipe ${pipe.id} (${pipe.note.name}): Bird=${birdCenterX.toFixed(1)}, Pipe=[${pipeLeftEdge.toFixed(1)}-${pipeRightEdge.toFixed(1)}], InZone=${isInTriggerZone}`)
+          
+          // Check if bird is in the harmonic trigger zone (play regardless of user singing)
+          if (isInTriggerZone) {
+            // BUT stop playing if user stops singing
+            if (!isPitchDetectedRef.current || pitch <= 0) {
+              // User stopped singing - stop harmonics immediately
+              if (lastHarmonicTimeRef.current[pipeId]) {
+                console.log(`🎵 STOPPING harmonics for pipe ${pipe.id} - user stopped singing`)
+                delete lastHarmonicTimeRef.current[pipeId]
+              }
+              return // Don't play harmonics
+            }
+            // Play harmonic continuously while in zone and user is singing (throttle to once per 150ms for smooth continuous play)
             const lastPlayTime = lastHarmonicTimeRef.current[pipeId] || 0
             const timeSinceLastPlay = now - lastPlayTime
             
-            console.log(`🎵 Within threshold! Time since last play: ${timeSinceLastPlay}ms`)
+            console.log(`🎵 In trigger zone with pitch detected! Pitch: ${pitch.toFixed(1)}Hz, Time since last play: ${timeSinceLastPlay}ms`)
             
-            if (timeSinceLastPlay > 500) {
-              console.log(`🎵🎸 PLAYING HARMONIC for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - distance: ${totalDistance.toFixed(1)}px`)
+            if (timeSinceLastPlay > 150) { // Reduced throttle for continuous play
+              console.log(`🎵🎸 PLAYING HARMONIC for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - in trigger zone with pitch`)
               
-              // Play harmonic immediately
+              // Play harmonic with longer duration for continuous effect
               try {
-                playGuitarHarmonic(pipe.note.frequency, 200) // Play for 200ms
+                playGuitarHarmonic(pipe.note.frequency, 300) // Longer duration for overlap
                 console.log(`🎵✅ Harmonic played successfully for ${pipe.note.name}`)
               } catch (error) {
                 console.error('🎵❌ Error playing harmonic:', error)
               }
               
               lastHarmonicTimeRef.current[pipeId] = now
-            } else {
-              console.log(`🎵 Harmonic throttled - waiting ${500 - timeSinceLastPlay}ms more`)
+            }
+          } else {
+            // Bird left the zone, reset timing for this pipe
+            if (lastHarmonicTimeRef.current[pipeId]) {
+              console.log(`🎵 Stopping harmonics for pipe ${pipe.id} - bird left zone`)
+              delete lastHarmonicTimeRef.current[pipeId]
             }
           }
         })
@@ -816,7 +853,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         {/* Bird placeholder - actual bird is rendered as overlay */}
       </Canvas>
     )
-  }, [gameState, width, height, pipes])
+  }, [gameState, width, height, pipes, bird])
   
   // Show loading screen during initialization
   if (isInitializing) {
@@ -969,12 +1006,13 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           source={require('./assets/flappy-bird-gif.gif')}
           style={{
             position: 'absolute',
-            left: bird.x - 10, // Offset to center the larger bird
-            top: bird.y - 10,
-            width: BIRD_SIZE * 1.5, // 60 pixels (1.5x larger)
-            height: BIRD_SIZE * 1.5,
+            left: bird.x - 5,
+            top: bird.y - 5,
+            width: BIRD_SIZE * 1.2,
+            height: BIRD_SIZE * 1.2,
             zIndex: 10,
           }}
+          resizeMode="contain"
         />
       )}
       
