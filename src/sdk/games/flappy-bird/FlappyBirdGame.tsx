@@ -1219,41 +1219,43 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
                 <Text style={styles.accuracyCardDescription}>Completed</Text>
               </View>
               
-              {/* Overall Accuracy Card */}
-              <View style={[styles.accuracyCard, styles.overallAccuracyCard]}>
-                <View style={styles.accuracyCardHeader}>
-                  <Ionicons name="trophy" size={20} color="#FFD700" />
-                  <Text style={styles.accuracyCardTitle}>Overall</Text>
+              {/* Overall Accuracy Card - Only show when cycles completed > 0 */}
+              {cycle > 0 && (
+                <View style={[styles.accuracyCard, styles.overallAccuracyCard]}>
+                  <View style={styles.accuracyCardHeader}>
+                    <Ionicons name="trophy" size={20} color="#FFD700" />
+                    <Text style={styles.accuracyCardTitle}>Overall</Text>
+                  </View>
+                  {(() => {
+                    const accuracy = getOverallAccuracy()
+                    if (accuracy.cycleAccuracy !== null) {
+                      return (
+                        <>
+                          <Text style={styles.overallAccuracyValue}>
+                            {accuracy.cycleAccuracy.toFixed(1)}%
+                          </Text>
+                          <Text style={styles.accuracyCardDescription}>Cycle Average</Text>
+                        </>
+                      )
+                    } else if (accuracy.noteAccuracy !== null) {
+                      return (
+                        <>
+                          <Text style={styles.overallAccuracyValue}>
+                            {accuracy.noteAccuracy.toFixed(1)}%
+                          </Text>
+                          <Text style={styles.accuracyCardDescription}>Note Average</Text>
+                        </>
+                      )
+                    }
+                    return (
+                      <>
+                        <Text style={styles.overallAccuracyValue}>--</Text>
+                        <Text style={styles.accuracyCardDescription}>No Data</Text>
+                      </>
+                    )
+                  })()}
                 </View>
-                {(() => {
-                  const accuracy = getOverallAccuracy()
-                  if (accuracy.cycleAccuracy !== null) {
-                    return (
-                      <>
-                        <Text style={styles.overallAccuracyValue}>
-                          {accuracy.cycleAccuracy.toFixed(1)}%
-                        </Text>
-                        <Text style={styles.accuracyCardDescription}>Cycle Average</Text>
-                      </>
-                    )
-                  } else if (accuracy.noteAccuracy !== null) {
-                    return (
-                      <>
-                        <Text style={styles.overallAccuracyValue}>
-                          {accuracy.noteAccuracy.toFixed(1)}%
-                        </Text>
-                        <Text style={styles.accuracyCardDescription}>Note Average</Text>
-                      </>
-                    )
-                  }
-                  return (
-                    <>
-                      <Text style={styles.overallAccuracyValue}>--</Text>
-                      <Text style={styles.accuracyCardDescription}>No Data</Text>
-                    </>
-                  )
-                })()}
-              </View>
+              )}
             </View>
           </View>
           
