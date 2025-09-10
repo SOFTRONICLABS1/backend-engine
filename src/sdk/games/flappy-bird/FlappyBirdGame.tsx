@@ -185,7 +185,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [bufferIdHistory, setBufferIdHistory] = useState<number[]>([])
   
   // Game state
-  const [gameState, setGameState] = useState<'menu' | 'playing' | 'gameOver'>('menu')
+  const [gameState, setGameState] = useState<'menu' | 'playing' | 'dying' | 'gameOver'>('menu')
   const [bird, setBird] = useState<Bird>({ x: width * 0.2, y: height / 2, velocity: 0 })
   const [pipes, setPipes] = useState<Pipe[]>([])
   const [score, setScore] = useState(0)
@@ -202,6 +202,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const pipeIdCounter = useRef(0)
   const gameStartTime = useRef<number>(0)
   const currentToleranceRef = useRef<number>(DIFFICULTY_SETTINGS.easy.frequencyTolerance) // Tolerance for current difficulty
+  const deathAnimationTimer = useRef<NodeJS.Timeout | null>(null)
   
   // Process notes from payload or use default sequence
   const noteSequence: Note[] = useMemo(() => {
@@ -493,16 +494,27 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     });
   }, [audioBuffer, sampleRate, bufferId, gameState, isActive, pitchHistory, rmsHistory, bufferIdHistory]);
 
-  // Handle game end callback
+  // Handle game end callback - start death animation
   const handleGameEnd = useCallback(() => {
+    setGameState('dying')
+    // Start death animation timer - bird will fall for 1.5 seconds then show game over
+    deathAnimationTimer.current = setTimeout(() => {
+      setGameState('gameOver')
+    }, 1500)
+  }, [])
+  
+  // Final game over (after death animation)
+  const handleFinalGameOver = useCallback(() => {
+    if (deathAnimationTimer.current) {
+      clearTimeout(deathAnimationTimer.current)
+      deathAnimationTimer.current = null
+    }
     setGameState('gameOver')
-    // Don't call external onGameEnd callback to avoid popup
-    // Keep game over handling internal
   }, [])
   
   // Game loop
   useEffect(() => {
-    if (gameState !== 'playing') return
+    if (gameState !== 'playing' && gameState !== 'dying') return
     
     const gameLoop = () => {
       const now = Date.now()
@@ -514,6 +526,27 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         let newY = prev.y
         let newVelocity = 0
         
+        if (gameState === 'dying') {
+          // During death animation, just apply gravity (bird falls down)
+          newVelocity = prev.velocity + GRAVITY * 1.5 // Faster falling during death
+          newY = prev.y + newVelocity
+          
+          // Stop falling when hitting the ground
+          if (newY > height - BIRD_SIZE) {
+            newY = height - BIRD_SIZE
+            newVelocity = 0
+            // Trigger final game over when bird hits ground
+            handleFinalGameOver()
+          }
+          
+          return {
+            ...prev,
+            y: newY,
+            velocity: newVelocity
+          }
+        }
+        
+        // Normal playing physics
         // Give player 3 seconds grace period at start before gravity applies
         const gracePeriod = 3000 // 3 seconds
         const timeSinceStart = now - gameStartTime.current
@@ -538,7 +571,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           newVelocity = 0
         }
         
-        // Check boundaries
+        // Check boundaries (only during playing, not dying)
         if (newY < 0 || newY > height - BIRD_SIZE) {
           handleGameEnd()
           return prev
@@ -551,35 +584,38 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         }
       })
       
-      // Update pipes (movement, generation, and cleanup)
-      setPipes(prev => {
-        const gameSpeed = GAME_SPEED_BASE * bpmSettings.speed
-        const minPipeSpacing = 120 // Reduced spacing between pipes (was 250px)
-        
-        // First, update existing pipe positions
-        let updatedPipes = prev
-          .map(pipe => ({
-            ...pipe,
-            x: pipe.x - gameSpeed
-          }))
-          .filter(pipe => pipe.x + pipe.width > -100) // Remove off-screen pipes
-        
-        // Then check if we need a new pipe
-        const shouldCreatePipe = now - lastNoteTime.current >= timePerNote
-        const lastPipe = updatedPipes[updatedPipes.length - 1]
-        const hasEnoughSpacing = !lastPipe || (width - lastPipe.x) >= minPipeSpacing
-        
-        if (shouldCreatePipe && hasEnoughSpacing) {
-          const newPipe = createPipe()
-          lastNoteTime.current = now
-          updatedPipes = [...updatedPipes, newPipe]
-        }
-        
-        return updatedPipes
-      })
+      // Update pipes (movement, generation, and cleanup) - only during playing
+      if (gameState === 'playing') {
+        setPipes(prev => {
+          const gameSpeed = GAME_SPEED_BASE * bpmSettings.speed
+          const minPipeSpacing = 120 // Reduced spacing between pipes (was 250px)
+          
+          // First, update existing pipe positions
+          let updatedPipes = prev
+            .map(pipe => ({
+              ...pipe,
+              x: pipe.x - gameSpeed
+            }))
+            .filter(pipe => pipe.x + pipe.width > -100) // Remove off-screen pipes
+          
+          // Then check if we need a new pipe
+          const shouldCreatePipe = now - lastNoteTime.current >= timePerNote
+          const lastPipe = updatedPipes[updatedPipes.length - 1]
+          const hasEnoughSpacing = !lastPipe || (width - lastPipe.x) >= minPipeSpacing
+          
+          if (shouldCreatePipe && hasEnoughSpacing) {
+            const newPipe = createPipe()
+            lastNoteTime.current = now
+            updatedPipes = [...updatedPipes, newPipe]
+          }
+          
+          return updatedPipes
+        })
+      }
       
-      // Check collisions and scoring
-      setPipes(prev => {
+      // Check collisions and scoring - only during playing
+      if (gameState === 'playing') {
+        setPipes(prev => {
         let newScore = score
         let cycleComplete = false
         
@@ -632,7 +668,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         }
         
         return updatedPipes
-      })
+        })
+      }
       
       gameLoopRef.current = requestAnimationFrame(gameLoop)
     }
@@ -758,6 +795,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       harmonicCheckIntervalRef.current = null
     }
     
+    // Clean up any existing death animation timer
+    if (deathAnimationTimer.current) {
+      clearTimeout(deathAnimationTimer.current)
+      deathAnimationTimer.current = null
+    }
+    
     setBird({ x: width * 0.2, y: height / 2, velocity: 0 })
     setPipes([])
     setScore(0)
@@ -787,6 +830,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       harmonicCheckIntervalRef.current = null
     }
     
+    // Clean up any existing death animation timer
+    if (deathAnimationTimer.current) {
+      clearTimeout(deathAnimationTimer.current)
+      deathAnimationTimer.current = null
+    }
+    
     setGameState('menu')
     setBird({ x: width * 0.2, y: height / 2, velocity: 0 })
     setPipes([])
@@ -807,7 +856,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   
   // Render game canvas
   const renderGame = useMemo(() => {
-    if (gameState === 'menu') return null
+    if (gameState === 'menu' || gameState === 'gameOver') return null
     
     return (
       <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0 }}>
@@ -1001,7 +1050,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       {renderGame}
       
       {/* Animated Bird Overlay */}
-      {gameState === 'playing' && (
+      {(gameState === 'playing' || gameState === 'dying') && (
         <RNImage
           source={require('./assets/flappy-bird-gif.gif')}
           style={{
@@ -1017,49 +1066,59 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       )}
       
       {/* Game UI overlay */}
-      <View style={styles.gameUI}>
-        <View style={styles.scoreContainer}>
-          <Text style={styles.gameScore}>Score: {score}</Text>
-          <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
-        </View>
-        
-        <View style={styles.noteInfo}>
-          <Text style={styles.currentNote}>
-            Pitch Control
-          </Text>
-          {(() => {
-            const timeSinceStart = Date.now() - gameStartTime.current
-            const gracePeriod = 3000
-            const isInGracePeriod = timeSinceStart < gracePeriod
-            
-            if (isInGracePeriod) {
-              const remainingTime = Math.ceil((gracePeriod - timeSinceStart) / 1000)
-              return (
-                <Text style={[styles.pitchIndicator, { color: '#ffd700' }]}>
-                  🛡️ Grace Period: {remainingTime}s
+      {(gameState === 'playing' || gameState === 'dying') && (
+        <View style={styles.gameUI}>
+          <View style={styles.scoreContainer}>
+            <Text style={styles.gameScore}>Score: {score}</Text>
+            <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
+          </View>
+          
+          <View style={styles.noteInfo}>
+            {gameState === 'dying' ? (
+              <Text style={[styles.pitchIndicator, { color: '#ff6b6b' }]}>
+                💥 GAME OVER
+              </Text>
+            ) : (
+              <>
+                <Text style={styles.currentNote}>
+                  Pitch Control
                 </Text>
-              )
-            }
-            
-            if (pitch > 0) {
-              return (
-                <>
-                  <Text style={styles.yourPitch}>
-                    {pitch.toFixed(1)} Hz
-                  </Text>
-                  <Text style={[styles.pitchIndicator, { 
-                    color: isPitchDetectedRef.current ? '#00ff88' : '#fff' 
-                  }]}>
-                    {isPitchDetectedRef.current ? '🎵 Pitch Control!' : '⬇️ Falling'}
-                  </Text>
-                </>
-              )
-            }
-            
-            return null
-          })()}
+                {(() => {
+                  const timeSinceStart = Date.now() - gameStartTime.current
+                  const gracePeriod = 3000
+                  const isInGracePeriod = timeSinceStart < gracePeriod
+                  
+                  if (isInGracePeriod) {
+                    const remainingTime = Math.ceil((gracePeriod - timeSinceStart) / 1000)
+                    return (
+                      <Text style={[styles.pitchIndicator, { color: '#ffd700' }]}>
+                        🛡️ Grace Period: {remainingTime}s
+                      </Text>
+                    )
+                  }
+                  
+                  if (pitch > 0) {
+                    return (
+                      <>
+                        <Text style={styles.yourPitch}>
+                          {pitch.toFixed(1)} Hz
+                        </Text>
+                        <Text style={[styles.pitchIndicator, { 
+                          color: isPitchDetectedRef.current ? '#00ff88' : '#fff' 
+                        }]}>
+                          {isPitchDetectedRef.current ? '🎵 Pitch Control!' : '⬇️ Falling'}
+                        </Text>
+                      </>
+                    )
+                  }
+                  
+                  return null
+                })()}
+              </>
+            )}
+          </View>
         </View>
-      </View>
+      )}
       
       <TouchableOpacity style={styles.pauseButton} onPress={resetGame}>
         <Ionicons name="pause" size={20} color="#fff" />
