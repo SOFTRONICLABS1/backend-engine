@@ -193,6 +193,11 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [isInitializing, setIsInitializing] = useState(true)
   const [backgroundOffset, setBackgroundOffset] = useState(0) // For scrolling background
   
+  // Pitch accuracy tracking
+  const [noteAccuracies, setNoteAccuracies] = useState<number[]>([]) // Accuracy per note
+  const [cycleAccuracies, setCycleAccuracies] = useState<number[]>([]) // Accuracy per cycle
+  const [currentNoteAccuracy, setCurrentNoteAccuracy] = useState<number>(0) // Current note being tracked
+  
   // Settings
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
   const [bpm, setBpm] = useState<BPM>(60)
@@ -204,6 +209,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const gameStartTime = useRef<number>(0)
   const currentToleranceRef = useRef<number>(DIFFICULTY_SETTINGS.easy.frequencyTolerance) // Tolerance for current difficulty
   const deathAnimationTimer = useRef<NodeJS.Timeout | null>(null)
+  
+  // Accuracy tracking refs
+  const currentPipeForAccuracy = useRef<Pipe | null>(null) // Current pipe being measured for accuracy
+  const accuracySamples = useRef<{frequency: number, timestamp: number}[]>([]) // Pitch samples for current note
   
   // Process notes from payload or use default sequence
   const noteSequence: Note[] = useMemo(() => {
@@ -357,6 +366,70 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     const normalized = clampedFreq / maxFreq
     return height - (normalized * height)
   }, [height])
+  
+  // Pitch accuracy calculation functions
+  const calculateNoteAccuracy = useCallback((sungFrequency: number, targetFrequency: number): number => {
+    /**
+     * PITCH ACCURACY PER NOTE FORMULA:
+     * Accuracy for a note = max(0, (1 - (absolute value of (sung frequency - target frequency) / target frequency)) × 100)
+     * 
+     * Example: Sung 105Hz, Target 120Hz
+     * Accuracy = max(0, (1 - |105 - 120| / 120) × 100) = max(0, (1 - 15/120) × 100) = 87.5%
+     */
+    const frequencyDifference = Math.abs(sungFrequency - targetFrequency)
+    const relativeError = frequencyDifference / targetFrequency
+    const accuracy = Math.max(0, (1 - relativeError) * 100)
+    return accuracy
+  }, [])
+  
+  const calculateCycleAccuracy = useCallback((noteAccuraciesInCycle: number[]): number => {
+    if (noteAccuraciesInCycle.length === 0) return 0
+    /**
+     * PITCH ACCURACY PER CYCLE FORMULA:
+     * Accuracy for a cycle = (sum of all note accuracies in the cycle) / (number of notes in the cycle)
+     * 
+     * Example: Note accuracies [87.5, 92.3, 88.1, 90.4, 91.7] in a 5-note cycle
+     * Cycle Accuracy = (87.5 + 92.3 + 88.1 + 90.4 + 91.7) / 5 = 450.0 / 5 = 90.0%
+     * 
+     * IMPORTANT: Only completed cycles are included. Incomplete cycles are excluded.
+     */
+    const sum = noteAccuraciesInCycle.reduce((acc, accuracy) => acc + accuracy, 0)
+    return sum / noteAccuraciesInCycle.length
+  }, [])
+  
+  const getOverallAccuracy = useCallback((): { noteAccuracy: number | null, cycleAccuracy: number | null } => {
+    /**
+     * OVERALL ACCURACY CALCULATION LOGIC:
+     * 
+     * Priority 1: If user completed ≥1 cycle, show CYCLE ACCURACY
+     * - Formula: (sum of all completed cycle accuracies) / (number of completed cycles)
+     * - Excludes incomplete cycles
+     * 
+     * Priority 2: If user has notes but no completed cycles, show NOTE ACCURACY  
+     * - Formula: (sum of note accuracies from completed cycles only) / (number of notes from completed cycles)
+     * - Excludes notes from incomplete cycles
+     * 
+     * Priority 3: If no data, show null
+     */
+    
+    // Priority 1: Use cycle accuracy if available (user completed at least one full cycle)
+    if (cycleAccuracies.length > 0) {
+      const overallCycleAccuracy = cycleAccuracies.reduce((acc, accuracy) => acc + accuracy, 0) / cycleAccuracies.length
+      return { noteAccuracy: null, cycleAccuracy: overallCycleAccuracy }
+    }
+    
+    // Priority 2: Use note accuracy from completed cycles only (exclude incomplete cycles)
+    const completedCycles = Math.floor(noteAccuracies.length / noteSequence.length)
+    if (completedCycles > 0) {
+      // Only use notes from completed cycles, exclude any incomplete cycle notes
+      const completedCycleNotes = noteAccuracies.slice(0, completedCycles * noteSequence.length)
+      const overallNoteAccuracy = completedCycleNotes.reduce((acc, accuracy) => acc + accuracy, 0) / completedCycleNotes.length
+      return { noteAccuracy: overallNoteAccuracy, cycleAccuracy: null }
+    }
+    
+    // Priority 3: No completed cycles, no overall accuracy to show
+    return { noteAccuracy: null, cycleAccuracy: null }
+  }, [noteAccuracies, cycleAccuracies, noteSequence.length])
   
   // Create a new pipe based on current note
   const createPipe = useCallback(() => {
@@ -621,10 +694,40 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         let cycleComplete = false
         
         const updatedPipes = prev.map(pipe => {
+          // Track accuracy while bird is in pipe area
+          if (bird.x + BIRD_SIZE > pipe.x && bird.x < pipe.x + pipe.width && pitch > 0) {
+            // Bird is in pipe area and singing - collect accuracy sample
+            if (currentPipeForAccuracy.current?.id !== pipe.id) {
+              // Starting to track a new pipe
+              currentPipeForAccuracy.current = pipe
+              accuracySamples.current = []
+            }
+            
+            // Add current pitch sample
+            accuracySamples.current.push({
+              frequency: pitch,
+              timestamp: now
+            })
+          }
+          
           // Check if bird passed pipe
           if (!pipe.passed && bird.x > pipe.x + pipe.width) {
             pipe.passed = true
             newScore++
+            
+            // Calculate accuracy for this note if we have samples
+            if (currentPipeForAccuracy.current?.id === pipe.id && accuracySamples.current.length > 0) {
+              // Calculate average sung frequency for this note
+              const avgSungFreq = accuracySamples.current.reduce((sum, sample) => sum + sample.frequency, 0) / accuracySamples.current.length
+              const noteAccuracy = calculateNoteAccuracy(avgSungFreq, pipe.note.frequency)
+              
+              // Add to note accuracies
+              setNoteAccuracies(prev => [...prev, noteAccuracy])
+              
+              // Clear samples for next note
+              accuracySamples.current = []
+              currentPipeForAccuracy.current = null
+            }
             
             // Check if we completed a full cycle (for cycle tracking)
             if (newScore % noteSequence.length === 0 && newScore > 0) {
@@ -665,7 +768,18 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         }
         
         if (cycleComplete) {
-          setCycle(prev => prev + 1)
+          setCycle(prev => {
+            const newCycleCount = prev + 1
+            
+            // Calculate cycle accuracy from the last noteSequence.length notes
+            const lastNoteAccuracies = noteAccuracies.slice(-noteSequence.length)
+            if (lastNoteAccuracies.length === noteSequence.length) {
+              const cycleAccuracy = calculateCycleAccuracy(lastNoteAccuracies)
+              setCycleAccuracies(prevCycles => [...prevCycles, cycleAccuracy])
+            }
+            
+            return newCycleCount
+          })
         }
         
         return updatedPipes
@@ -814,6 +928,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setCycle(0)
     setCurrentNoteIndex(0)
     setBackgroundOffset(0)
+    // Reset accuracy tracking
+    setNoteAccuracies([])
+    setCycleAccuracies([])
+    setCurrentNoteAccuracy(0)
+    currentPipeForAccuracy.current = null
+    accuracySamples.current = []
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -851,6 +971,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setCycle(0)
     setCurrentNoteIndex(0)
     setBackgroundOffset(0)
+    // Reset accuracy tracking
+    setNoteAccuracies([])
+    setCycleAccuracies([])
+    setCurrentNoteAccuracy(0)
+    currentPipeForAccuracy.current = null
+    accuracySamples.current = []
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -1018,9 +1144,44 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         <View style={styles.gameOverContainer}>
           <Text style={styles.gameOverTitle}>Game Over!</Text>
           <Text style={styles.scoreText}>Score: {score}</Text>
-          {cycle > 0 && (
-            <Text style={styles.cycleText}>Cycles Completed: {cycle}</Text>
-          )}
+          
+          {/* Comprehensive Accuracy Display */}
+          <View style={styles.accuracySection}>
+            {/* Note Accuracy - includes ALL notes (even from incomplete cycles) */}
+            {noteAccuracies.length > 0 && (
+              <Text style={styles.accuracyDetailText}>
+                Note Accuracy: {(noteAccuracies.reduce((sum, acc) => sum + acc, 0) / noteAccuracies.length).toFixed(1)}%
+              </Text>
+            )}
+            
+            {/* Total Cycles Completed */}
+            <Text style={styles.accuracyDetailText}>
+              Cycles Completed: {cycle}
+            </Text>
+            
+            {/* Overall Accuracy - show cycle accuracy if available, otherwise note accuracy */}
+            {(() => {
+              const accuracy = getOverallAccuracy()
+              if (accuracy.cycleAccuracy !== null) {
+                return (
+                  <Text style={styles.accuracyMainText}>
+                    Overall Accuracy: {accuracy.cycleAccuracy.toFixed(1)}%
+                  </Text>
+                )
+              } else if (accuracy.noteAccuracy !== null) {
+                return (
+                  <Text style={styles.accuracyMainText}>
+                    Overall Accuracy: {accuracy.noteAccuracy.toFixed(1)}%
+                  </Text>
+                )
+              }
+              return (
+                <Text style={styles.accuracyMainText}>
+                  Overall Accuracy: --
+                </Text>
+              )
+            })()}
+          </View>
           
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.actionButton} onPress={startGame}>
@@ -1173,6 +1334,27 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
               </>
             )}
           </View>
+          
+          {/* Accuracy Container */}
+          {(() => {
+            const accuracy = getOverallAccuracy()
+            if (accuracy.cycleAccuracy !== null || accuracy.noteAccuracy !== null) {
+              return (
+                <View style={styles.accuracyContainer}>
+                  {accuracy.cycleAccuracy !== null ? (
+                    <Text style={styles.accuracyLabel}>
+                      Cycle: {accuracy.cycleAccuracy.toFixed(1)}%
+                    </Text>
+                  ) : (
+                    <Text style={styles.accuracyLabel}>
+                      Note: {accuracy.noteAccuracy!.toFixed(1)}%
+                    </Text>
+                  )}
+                </View>
+              )
+            }
+            return null
+          })()}
         </View>
       )}
       
@@ -1395,6 +1577,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignSelf: 'flex-start',
   },
+  accuracyContainer: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
   gameScore: {
     color: '#fff',
     fontSize: 18,
@@ -1415,10 +1604,36 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontWeight: 'bold',
   },
+  accuracyLabel: {
+    color: '#FFD700',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
   pitchIndicator: {
     fontSize: 10,
     marginTop: 3,
     fontWeight: 'bold',
+  },
+  accuracySection: {
+    backgroundColor: 'rgba(0,0,0,0.1)',
+    padding: 20,
+    borderRadius: 12,
+    marginVertical: 20,
+    alignItems: 'center' as const,
+  },
+  accuracyDetailText: {
+    fontSize: 16,
+    color: '#FFFFFF',
+    marginBottom: 8,
+    fontWeight: 'bold',
+    textAlign: 'center' as const,
+  },
+  accuracyMainText: {
+    fontSize: 22,
+    color: '#FFD700',
+    marginTop: 10,
+    fontWeight: 'bold',
+    textAlign: 'center' as const,
   },
   pauseButton: {
     position: 'absolute',
