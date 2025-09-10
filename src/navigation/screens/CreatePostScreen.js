@@ -11,7 +11,8 @@ import {
   Image,
   Modal,
   FlatList,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from 'react-native';
 import { launchImageLibrary } from 'react-native-image-picker';
 import DocumentPicker from 'react-native-document-picker';
@@ -76,17 +77,13 @@ export default function CreatePostScreen({ navigation }) {
     videoName: '',
     caption: '',
     notes: '',
-    tempo: 120,  // Default tempo in BPM
+    tempo: 60,  // Default tempo in BPM
     suggestedGames: '',  // Display string for UI
     selectedGameIds: []  // Array of game IDs for API
   });
 
   const handleVideoSelect = (video) => {
     setSelectedVideo(video);
-    setPostData(prev => ({
-      ...prev,
-      videoName: video.title
-    }));
     setShowVideoSelector(false);
   };
 
@@ -121,10 +118,6 @@ export default function CreatePostScreen({ navigation }) {
         };
         
         setSelectedVideo(videoData);
-        setPostData(prev => ({
-          ...prev,
-          videoName: videoData.title
-        }));
       }
     });
   };
@@ -291,18 +284,41 @@ export default function CreatePostScreen({ navigation }) {
   };
 
   const handleCreatePost = async () => {
+    // Validate all mandatory fields and collect missing ones
+    const missingFields = [];
+
     if (!selectedVideo) {
-      Alert.alert('Missing Video', 'Please select a video first.');
-      return;
+      missingFields.push('• Video selection');
     }
 
     if (!postData.videoName.trim()) {
-      Alert.alert('Missing Video Name', 'Please add a name for your video.');
-      return;
+      missingFields.push('• Title');
     }
 
     if (!postData.caption.trim()) {
-      Alert.alert('Missing Caption', 'Please add a caption for your post.');
+      missingFields.push('• Caption');
+    }
+
+    if (!postData.notes.trim()) {
+      missingFields.push('• Music notes');
+    }
+
+    if (!postData.tempo || postData.tempo <= 0) {
+      missingFields.push('• BPM');
+    }
+
+    if (!postData.selectedGameIds || postData.selectedGameIds.length === 0) {
+      missingFields.push('• Suggested games');
+    }
+
+    // If any fields are missing, show them all in one popup
+    if (missingFields.length > 0) {
+      const missingFieldsText = missingFields.join('\n');
+      Alert.alert(
+        'Please Fill Missing Fields',
+        `The following fields are required:\n\n${missingFieldsText}`,
+        [{ text: 'OK', style: 'default' }]
+      );
       return;
     }
 
@@ -926,12 +942,14 @@ export default function CreatePostScreen({ navigation }) {
         <View style={[styles.section, { backgroundColor: theme.surface }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Post Details</Text>
+{/* 
             <TouchableOpacity
               style={[styles.sampleDataButton, { backgroundColor: theme.primary }]}
               onPress={fillSampleData}
             >
               <Text style={styles.sampleDataButtonText}>Fill Sample</Text>
             </TouchableOpacity>
+*/}
           </View>
           
           {/* Video Name */}
@@ -1039,6 +1057,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    paddingTop: Platform.OS === 'android' ? 50 : 12,
     borderBottomWidth: 1,
   },
   cancelButton: {

@@ -3,6 +3,7 @@ import { FlatList, Dimensions, View, StatusBar, Platform, Alert, Text, Touchable
 import { GamePreview } from './GamePreview';
 import contentService from '../../api/services/contentService';
 import { useFocusEffect } from '@react-navigation/native';
+import { responsivePlatformValue } from '../../utils/responsive';
 
 // Transform API content to GamePreview format
 const transformApiContentToGameFormat = (apiContent, userName, userDisplayName, userAvatar, contentDetails = null) => {
@@ -197,7 +198,7 @@ export const UserGamesList = ({ navigation, userId, userName, userDisplayName, u
   }).current;
 
 
-  const itemHeight = actualHeight - (Platform.OS === 'ios' ? 100 : 80);
+  const itemHeight = Platform.OS === 'ios' ? actualHeight + 50 : actualHeight + 20; // iOS: Extra height, Android: Slightly more coverage
   
   const getItemLayout = (_, index) => ({
     length: itemHeight,
@@ -206,11 +207,16 @@ export const UserGamesList = ({ navigation, userId, userName, userDisplayName, u
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: 'black' }}>
+    <View style={{ 
+      flex: 1, 
+      backgroundColor: 'black',
+      marginTop: Platform.OS === 'ios' ? -80 : 0 // Push content up behind status bar on iOS
+    }}>
       <StatusBar 
         barStyle="light-content" 
         backgroundColor="transparent" 
-        translucent={true} 
+        translucent={true}
+        hidden={false}
       />
 {isLoading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -242,7 +248,11 @@ export const UserGamesList = ({ navigation, userId, userName, userDisplayName, u
             ref={flatListRef}
             data={userGameContent}
             renderItem={({ item, index }) => (
-              <View style={{ height: itemHeight }}>
+              <View style={{ 
+                height: itemHeight,
+                marginTop: Platform.OS === 'ios' ? 10 : 0, // Minimal top margin for iOS
+                marginBottom: Platform.OS === 'android' ? -10 : 0, // Remove bottom gap on Android
+              }}>
                 <GamePreview 
                   musicVideoReel={item} 
                   navigation={navigation}
@@ -272,15 +282,16 @@ export const UserGamesList = ({ navigation, userId, userName, userDisplayName, u
           <TouchableOpacity 
             style={{
               position: 'absolute',
-              top: Platform.OS === 'ios' ? 5 : 30,
+              top: responsivePlatformValue(105, 20), // iOS: higher, Android: moved down
               left: 9,
               width: 40,
               height: 40,
-              backgroundColor: 'rgba(0, 0, 0, 0.5)',
+              backgroundColor: 'rgba(0, 0, 0, 0.5)', // Back to original black
               borderRadius: 20,
               justifyContent: 'center',
               alignItems: 'center',
-              zIndex: 1000,
+              zIndex: 9999,
+              elevation: 10,
             }}
             onPress={() => navigation.goBack()}
           >

@@ -207,6 +207,7 @@ export default function UserProfileScreen({ route, navigation }) {
     <SafeAreaView style={[styles.container, { backgroundColor: AppColors.background }]}>
       <MusicCreatorProfile 
         creatorName={user?.signup_username || user?.username || 'Unknown User'}
+        username={user?.username || username || 'Unknown User'}
         avatar={user?.profile_image_url || 'https://i.pravatar.cc/150?img=4'}
         followers={user?.total_subscribers || 0}
         following={0} // Not available in API response

@@ -8,7 +8,8 @@ import {
   Dimensions, 
   Animated, 
   Alert,
-  ActivityIndicator 
+  ActivityIndicator,
+  Platform 
 } from 'react-native';
 import Video from 'react-native-video';
 import { useFocusEffect } from '@react-navigation/native';
@@ -21,6 +22,7 @@ import socialService from '../../api/services/socialService';
 import followStatusManager from '../../api/services/followStatusManager';
 import authService from '../../api/services/authService';
 import { navigateToUserProfile } from '../../utils/navigationHelpers';
+import { responsivePlatformValue } from '../../utils/responsive';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -567,7 +569,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
                   </View>
                 )}
               </View>
-              <Text style={styles.username}>@{musicVideoReel.user.name}</Text>
+              <Text style={styles.username}>@{musicVideoReel.user.name || musicVideoReel.user.displayName}</Text>
             </TouchableOpacity>
             
             {showFollowButton && !isOwnContent && (() => {
@@ -732,6 +734,7 @@ const styles = StyleSheet.create({
     right: 16,
     alignItems: 'flex-end',
     gap: 8,
+    display: 'none', // Hide difficulty badge
   },
   difficultyBadge: {
     paddingHorizontal: 8,
@@ -746,7 +749,7 @@ const styles = StyleSheet.create({
   },
   topGameTitle: {
     position: 'absolute',
-    top: 50,
+    top: responsivePlatformValue(140, 60), // iOS: moved further down, Android: stays same
     left: 16,
     right: 80,
   },
@@ -767,7 +770,7 @@ const styles = StyleSheet.create({
   },
   bottomContent: {
     position: 'absolute',
-    bottom: 55,
+    bottom: Platform.OS === 'ios' ? 50 : 20, // iOS: higher up (50px), Android: lower down (20px)
     left: 16,
     right: 16,
   },

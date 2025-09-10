@@ -4,6 +4,7 @@ import { GamePreview } from './GamePreview';
 import contentService from '../../api/services/contentService';
 import userService from '../../api/services/userService';
 import { useFocusEffect } from '@react-navigation/native';
+import { responsivePlatformValue } from '../../utils/responsive';
 
 // Transform API content to GamePreview format for public content
 const transformPublicContentToGameFormat = (apiContent, contentDetails = null, userData = null) => {
@@ -220,7 +221,7 @@ export const PublicContentFeed = ({ navigation }) => {
     viewAreaCoveragePercentThreshold: 50,
   }).current;
 
-  const itemHeight = actualHeight - (Platform.OS === 'ios' ? 100 : 80);
+  const itemHeight = actualHeight;
   
   const getItemLayout = (_, index) => ({
     length: itemHeight,
@@ -229,11 +230,16 @@ export const PublicContentFeed = ({ navigation }) => {
   });
 
   return (
-    <View style={{ flex: 1, backgroundColor: 'black' }}>
+    <View style={{ 
+      flex: 1, 
+      backgroundColor: 'black',
+      marginTop: Platform.OS === 'ios' ? -80 : 0 // Push content up behind status bar on iOS
+    }}>
       <StatusBar 
         barStyle="light-content" 
         backgroundColor="transparent" 
-        translucent={true} 
+        translucent={true}
+        hidden={false}
       />
       {isLoading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -264,7 +270,11 @@ export const PublicContentFeed = ({ navigation }) => {
           ref={flatListRef}
           data={publicContent}
           renderItem={({ item, index }) => (
-            <View style={{ height: itemHeight }}>
+            <View style={{ 
+                height: itemHeight,
+                marginTop: Platform.OS === 'android' ? -8 : -7,
+                marginBottom: Platform.OS === 'android' ? -10 : -20,
+              }}>
               <GamePreview 
                 musicVideoReel={item} 
                 navigation={navigation}

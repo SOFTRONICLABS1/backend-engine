@@ -1,5 +1,5 @@
 import React from 'react';
-import { SafeAreaView, StyleSheet } from 'react-native';
+import { View, StyleSheet } from 'react-native';
 import { UserGamesList } from '../../components/games/UserGamesList';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -8,7 +8,7 @@ export default function UserHomeScreen({ navigation, route }) {
   const { userId, userName, userDisplayName, userAvatar, contentId } = route.params || {};
   
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <UserGamesList 
         navigation={navigation} 
         userId={userId} 
@@ -17,7 +17,7 @@ export default function UserHomeScreen({ navigation, route }) {
         userAvatar={userAvatar}
         contentId={contentId} 
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

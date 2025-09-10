@@ -63,6 +63,15 @@ export const IconSymbol: React.FC<IconSymbolProps> = ({ name, size, color }) => 
       'envelope.fill': 'mail',
       'chevron.right': 'chevron-forward',
       'play.circle.fill': 'play-circle',
+      'party.popper': 'balloon',
+      'sparkles': 'star',
+      'person.badge.plus': 'person-add',
+      'at': 'at',
+      'phone.fill': 'call',
+      'chevron.down': 'chevron-down',
+      'play.fill': 'play',
+      'exclamationmark.triangle': 'warning',
+      'chevron.left': 'chevron-back',
     };
 
     // Material Icons mapping
