@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform, Image as RNImage } from "react-native"
-import { Canvas, Rect, Circle, Fill, Text as SkiaText, matchFont } from "@shopify/react-native-skia"
+import { Canvas, Rect, Circle, Text as SkiaText, matchFont } from "@shopify/react-native-skia"
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation } from "@react-navigation/native"
 import { useGameScreenMicrophone } from "@/hooks/useGameScreenMicrophone"
@@ -191,6 +191,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [score, setScore] = useState(0)
   const [cycle, setCycle] = useState(0) // Track cycles in easy mode
   const [isInitializing, setIsInitializing] = useState(true)
+  const [backgroundOffset, setBackgroundOffset] = useState(0) // For scrolling background
   
   // Settings
   const [difficulty, setDifficulty] = useState<Difficulty>('easy')
@@ -497,10 +498,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Handle game end callback - start death animation
   const handleGameEnd = useCallback(() => {
     setGameState('dying')
-    // Start death animation timer - bird will fall for 1.5 seconds then show game over
+    // Start death animation timer - bird will fall for 2 seconds then show game over
     deathAnimationTimer.current = setTimeout(() => {
       setGameState('gameOver')
-    }, 1500)
+    }, 2000)
   }, [])
   
   // Final game over (after death animation)
@@ -671,6 +672,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         })
       }
       
+      // Update background scrolling
+      if (gameState === 'playing') {
+        const backgroundSpeed = GAME_SPEED_BASE * bpmSettings.speed * 0.3 // Slower than pipes
+        setBackgroundOffset(prev => (prev + backgroundSpeed) % width)
+      }
+      
       gameLoopRef.current = requestAnimationFrame(gameLoop)
     }
     
@@ -681,7 +688,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         cancelAnimationFrame(gameLoopRef.current)
       }
     }
-  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd, pitch, width])
+  }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd, pitch, width, handleFinalGameOver])
   
   // Harmonic proximity checker (optimized to avoid blocking main thread)
   const harmonicCheckIntervalRef = useRef<NodeJS.Timeout | null>(null)
@@ -806,6 +813,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setScore(0)
     setCycle(0)
     setCurrentNoteIndex(0)
+    setBackgroundOffset(0)
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -842,6 +850,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setScore(0)
     setCycle(0)
     setCurrentNoteIndex(0)
+    setBackgroundOffset(0)
     // Reset tolerance based on difficulty
     currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
     // Reset harmonic tracking
@@ -859,8 +868,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     if (gameState === 'menu' || gameState === 'gameOver') return null
     
     return (
-      <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0 }}>
-        <Fill color="#87CEEB" />
+      <Canvas style={{ width, height, position: 'absolute', top: 0, left: 0, zIndex: 2 }}>
+        {/* Transparent background so the scrolling background shows through */}
         
         {/* Pipes */}
         {pipes.map(pipe => (
@@ -1047,6 +1056,38 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Render playing game
   return (
     <View style={styles.container}>
+      {/* Scrolling Background */}
+      {(gameState === 'playing' || gameState === 'dying') && (
+        <>
+          {/* First background image */}
+          <RNImage
+            source={require('./assets/background.jpg')}
+            style={{
+              position: 'absolute',
+              left: -backgroundOffset,
+              top: 0,
+              width: width,
+              height: height,
+              zIndex: 1,
+            }}
+            resizeMode="cover"
+          />
+          {/* Second background image for seamless scrolling */}
+          <RNImage
+            source={require('./assets/background.jpg')}
+            style={{
+              position: 'absolute',
+              left: width - backgroundOffset,
+              top: 0,
+              width: width,
+              height: height,
+              zIndex: 1,
+            }}
+            resizeMode="cover"
+          />
+        </>
+      )}
+      
       {renderGame}
       
       {/* Animated Bird Overlay */}
@@ -1059,30 +1100,33 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             top: bird.y - 5,
             width: BIRD_SIZE * 1.2,
             height: BIRD_SIZE * 1.2,
-            zIndex: 10,
+            zIndex: 5,
           }}
           resizeMode="contain"
         />
       )}
       
-      {/* Game UI overlay */}
+      {/* Game UI overlay - All in top left, stacked vertically */}
       {(gameState === 'playing' || gameState === 'dying') && (
-        <View style={styles.gameUI}>
+        <View style={[styles.gameUIContainer, { zIndex: 10 }]}>
+          {/* Score Container */}
           <View style={styles.scoreContainer}>
             <Text style={styles.gameScore}>Score: {score}</Text>
+          </View>
+          
+          {/* Cycle Container */}
+          <View style={styles.cycleContainer}>
             <Text style={styles.cycleInfo}>Cycle: {cycle}</Text>
           </View>
           
-          <View style={styles.noteInfo}>
+          {/* Pitch Info Container */}
+          <View style={styles.pitchContainer}>
             {gameState === 'dying' ? (
               <Text style={[styles.pitchIndicator, { color: '#ff6b6b' }]}>
                 💥 GAME OVER
               </Text>
             ) : (
               <>
-                <Text style={styles.currentNote}>
-                  Pitch Control
-                </Text>
                 {(() => {
                   const timeSinceStart = Date.now() - gameStartTime.current
                   const gracePeriod = 3000
@@ -1100,19 +1144,17 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
                   if (pitch > 0) {
                     return (
                       <>
-                        <Text style={styles.yourPitch}>
-                          {pitch.toFixed(1)} Hz
-                        </Text>
-                        <Text style={[styles.pitchIndicator, { 
+                        <Text style={styles.pitchLabel}>Pitch: {pitch.toFixed(1)} Hz</Text>
+                        <Text style={[styles.pitchStatus, { 
                           color: isPitchDetectedRef.current ? '#00ff88' : '#fff' 
                         }]}>
-                          {isPitchDetectedRef.current ? '🎵 Pitch Control!' : '⬇️ Falling'}
+                          {isPitchDetectedRef.current ? '🎵 Flying' : '⬇️ Falling'}
                         </Text>
                       </>
                     )
                   }
                   
-                  return null
+                  return <Text style={styles.pitchLabel}>Pitch: --</Text>
                 })()}
               </>
             )}
@@ -1311,18 +1353,33 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
   },
-  gameUI: {
+  gameUIContainer: {
     position: 'absolute',
     top: 60,
-    left: 80,
-    right: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    left: 20,
+    flexDirection: 'column',
+    gap: 10,
   },
   scoreContainer: {
     backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 8,
     borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  cycleContainer: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  pitchContainer: {
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
   },
   gameScore: {
     color: '#fff',
@@ -1331,32 +1388,18 @@ const styles = StyleSheet.create({
   },
   cycleInfo: {
     color: '#fff',
-    fontSize: 14,
-  },
-  toleranceInfo: {
-    color: '#ffd700',
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: 'bold',
   },
-  noteInfo: {
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    padding: 10,
-    borderRadius: 8,
-    alignItems: 'flex-end',
-  },
-  currentNote: {
+  pitchLabel: {
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
   },
-  currentFreq: {
-    color: '#fff',
-    fontSize: 12,
-  },
-  yourPitch: {
-    color: '#00ff88',
-    fontSize: 12,
-    marginTop: 5,
+  pitchStatus: {
+    fontSize: 14,
+    marginTop: 4,
+    fontWeight: 'bold',
   },
   pitchIndicator: {
     fontSize: 10,
