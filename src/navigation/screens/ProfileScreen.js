@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Text, Modal, Image, ActivityIndicator, ActionSheet } from 'react-native';
+import { View, StyleSheet, ScrollView, TouchableOpacity, Alert, SafeAreaView, Text, Modal, Image, ActivityIndicator, ActionSheet, Platform } from 'react-native';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
 import { CommonActions, useFocusEffect } from '@react-navigation/native';
@@ -8,6 +8,12 @@ import { launchImageLibrary, launchCamera } from 'react-native-image-picker';
 import authService from '../../api/services/authService';
 import socialService from '../../api/services/socialService';
 import ProfileTabs from '../../components/ProfileTabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { 
+  responsiveHeight, 
+  responsiveWidth, 
+  useResponsiveValues 
+} from '../../utils/responsive';
 
 const dummyUserData = {
   userSince: 'March 2023',
@@ -111,6 +117,9 @@ const dummyUserData = {
 
 export default function ProfileScreen({ navigation }) {
   const { theme } = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
+  const responsiveValues = useResponsiveValues(safeAreaInsets);
+  
   const [userData, setUserData] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [showMenu, setShowMenu] = useState(false);
@@ -386,7 +395,13 @@ export default function ProfileScreen({ navigation }) {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <View style={[styles.container, { backgroundColor: theme.background }]}>
         {/* Header with hamburger menu */}
-        <View style={[styles.header, { backgroundColor: theme.surface }]}>
+        <View style={[
+          styles.header, 
+          { 
+            backgroundColor: theme.surface,
+            marginTop: Platform.OS === 'android' ? responsiveHeight(20) : 0,
+          }
+        ]}>
           <View style={{ width: 40 }} />
           <Text style={[styles.headerTitle, { color: theme.text }]}>Profile</Text>
           <TouchableOpacity 

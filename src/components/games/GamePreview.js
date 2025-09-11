@@ -22,17 +22,34 @@ import socialService from '../../api/services/socialService';
 import followStatusManager from '../../api/services/followStatusManager';
 import authService from '../../api/services/authService';
 import { navigateToUserProfile } from '../../utils/navigationHelpers';
-import { responsivePlatformValue } from '../../utils/responsive';
+import { 
+  responsivePlatformValue, 
+  responsiveHeight, 
+  responsiveWidth, 
+  debugResponsive,
+  useResponsiveValues 
+} from '../../utils/responsive';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { height: screenHeight } = Dimensions.get('window');
 
 
 export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = true, isScreenFocused = true, isCurrentItem = true }) => {
   const { theme } = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
+  const responsiveValues = useResponsiveValues(safeAreaInsets);
+  
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
   const [following, setFollowing] = useState(false);
+  
+  // Debug responsive values
+  useEffect(() => {
+    if (__DEV__) {
+      debugResponsive('GamePreview');
+    }
+  }, []);
   
   // Debug initial state
   // console.log('🏗️ GamePreview: Component initialized for user:', musicVideoReel?.userId || musicVideoReel?.user?.id, 'initial following state:', following);
@@ -553,12 +570,26 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
         </View>
 
 
-        <View style={styles.topGameTitle}>
+        <View style={[
+          styles.topGameTitle,
+          {
+            top: responsiveValues.responsiveTop(Platform.OS === 'ios' ? 140 : 45),
+            left: responsiveWidth(16),
+            right: responsiveWidth(80),
+          }
+        ]}>
           <Text style={[styles.topTitle, { color: 'white' }]}>{musicVideoReel.title}</Text>
           <Text style={[styles.genreText, { color: 'rgba(255,255,255,0.8)' }]}>{musicVideoReel.genre}</Text>
         </View>
 
-        <View style={styles.bottomContent}>
+        <View style={[
+          styles.bottomContent,
+          {
+            bottom: responsiveValues.responsiveBottom(Platform.OS === 'ios' ? 50 : 45),
+            left: responsiveWidth(16),
+            right: responsiveWidth(16),
+          }
+        ]}>
           <View style={styles.userRow}>
             <TouchableOpacity style={styles.userInfo} onPress={handleUserPress}>
               <View style={styles.userAvatar}>
@@ -750,9 +781,7 @@ const styles = StyleSheet.create({
   },
   topGameTitle: {
     position: 'absolute',
-    top: responsivePlatformValue(140, 60), // iOS: moved further down, Android: stays same
-    left: 16,
-    right: 80,
+    // Dynamic positioning applied inline in component
   },
   topTitle: {
     fontSize: 20,
@@ -771,9 +800,7 @@ const styles = StyleSheet.create({
   },
   bottomContent: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 50 : 19, // iOS: 50px, Android: moved much higher to 80px
-    left: 16,
-    right: 16,
+    // Dynamic positioning applied inline in component
   },
   userRow: {
     flexDirection: 'row',
