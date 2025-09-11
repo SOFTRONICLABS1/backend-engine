@@ -1,126 +1,102 @@
 import { useState, useEffect } from 'react';
-import { NativeEventEmitter, NativeModules } from 'react-native';
+import { Platform } from 'react-native';
 
 const useHeadphoneDetection = () => {
   const [isHeadphoneConnected, setIsHeadphoneConnected] = useState(false);
   const [audioOutputType, setAudioOutputType] = useState('speaker');
 
   useEffect(() => {
-    let HeadphoneDetection = null;
-    let audioJackEventEmitter = null;
-    let audioJackListener = null;
+    let interval = null;
 
-    const initializeDetection = async () => {
+    const checkHeadphoneConnection = async () => {
       try {
-        // Try to import the headphone detection module
-        HeadphoneDetection = require('react-native-headphone-detection').default;
+        // For development and testing, we'll use a simpler approach
+        // that doesn't require complex native modules
         
-        if (HeadphoneDetection) {
-          // Check initial state
-          HeadphoneDetection.isAudioDeviceConnected().then(({ audioJack, bluetooth }) => {
-            console.log('Initial headphone state - audioJack:', audioJack, 'bluetooth:', bluetooth);
-            const connected = audioJack || bluetooth;
-            setIsHeadphoneConnected(connected);
-            
-            if (audioJack) {
-              setAudioOutputType('wired');
-            } else if (bluetooth) {
-              setAudioOutputType('bluetooth');
-            } else {
-              setAudioOutputType('speaker');
-            }
-          }).catch(error => {
-            console.log('Error checking initial headphone state:', error);
-            // Fallback to not connected
-            setIsHeadphoneConnected(false);
-            setAudioOutputType('speaker');
-          });
-
-          // Set up listeners
-          audioJackEventEmitter = new NativeEventEmitter(NativeModules.RNHeadphoneDetection);
-          audioJackListener = audioJackEventEmitter.addListener('onChange', (data) => {
-            console.log('Headphone state changed:', data);
-            const connected = data.audioJack || data.bluetooth;
-            setIsHeadphoneConnected(connected);
-            
-            if (data.audioJack) {
-              setAudioOutputType('wired');
-            } else if (data.bluetooth) {
-              setAudioOutputType('bluetooth');
-            } else {
-              setAudioOutputType('speaker');
-            }
-          });
+        if (Platform.OS === 'web') {
+          // Web platform - always allow for testing
+          setIsHeadphoneConnected(true);
+          setAudioOutputType('unknown');
+          return;
         }
-      } catch (error) {
-        console.log('Headphone detection module not available, using fallback:', error.message);
+
+        // Try to detect using available React Native APIs
+        // This is a simplified detection that works with current RN setup
         
-        // Fallback: Try using the audio session if available
+        // Check if we have access to audio session info
         try {
           const AudioSession = require('react-native-audio-session').default;
           
-          const checkAudioRoute = async () => {
-            try {
-              if (AudioSession && AudioSession.currentRoute) {
-                const currentRoute = await AudioSession.currentRoute();
-                console.log('Audio Route (fallback):', currentRoute);
-                
-                if (currentRoute && currentRoute.outputs) {
-                  const hasHeadphones = currentRoute.outputs.some(output => {
-                    const portType = (output.portType || '').toLowerCase();
-                    return portType.includes('headphone') || 
-                           portType.includes('headset') ||
-                           portType.includes('bluetooth') ||
-                           portType.includes('a2dp');
-                  });
-                  
-                  setIsHeadphoneConnected(hasHeadphones);
-                  
-                  if (currentRoute.outputs.some(output => {
-                    const portType = (output.portType || '').toLowerCase();
-                    return portType.includes('headphone') || portType.includes('headset');
-                  })) {
-                    setAudioOutputType('wired');
-                  } else if (currentRoute.outputs.some(output => {
-                    const portType = (output.portType || '').toLowerCase();
-                    return portType.includes('bluetooth') || portType.includes('a2dp');
-                  })) {
-                    setAudioOutputType('bluetooth');
-                  } else {
-                    setAudioOutputType('speaker');
-                  }
-                }
+          if (AudioSession && typeof AudioSession.currentRoute === 'function') {
+            const currentRoute = await AudioSession.currentRoute();
+            console.log('🎧 Audio route check:', currentRoute);
+            
+            if (currentRoute && currentRoute.outputs && Array.isArray(currentRoute.outputs)) {
+              const hasHeadphones = currentRoute.outputs.some(output => {
+                const portType = (output.portType || '').toLowerCase();
+                return portType.includes('headphone') || 
+                       portType.includes('headset') ||
+                       portType.includes('bluetooth') ||
+                       portType.includes('a2dp') ||
+                       portType.includes('airpods');
+              });
+              
+              setIsHeadphoneConnected(hasHeadphones);
+              
+              // Determine the type
+              if (currentRoute.outputs.some(output => {
+                const portType = (output.portType || '').toLowerCase();
+                return portType.includes('headphone') || portType.includes('headset');
+              })) {
+                setAudioOutputType('wired');
+              } else if (currentRoute.outputs.some(output => {
+                const portType = (output.portType || '').toLowerCase();
+                return portType.includes('bluetooth') || 
+                       portType.includes('a2dp') || 
+                       portType.includes('airpods');
+              })) {
+                setAudioOutputType('bluetooth');
+              } else {
+                setAudioOutputType('speaker');
               }
-            } catch (err) {
-              console.log('Fallback audio route check failed:', err);
-              // Default to no headphones
+              
+              console.log('🎧 Headphone connected:', hasHeadphones, 'Type:', audioOutputType);
+            } else {
+              // No route info available, default to speaker
               setIsHeadphoneConnected(false);
               setAudioOutputType('speaker');
             }
-          };
-          
-          // Initial check
-          checkAudioRoute();
-          
-          // Poll for changes
-          const interval = setInterval(checkAudioRoute, 3000);
-          
-          return () => clearInterval(interval);
-        } catch (fallbackError) {
-          console.log('No headphone detection available:', fallbackError.message);
-          // Default to allowing access (no restriction)
-          setIsHeadphoneConnected(true);
-          setAudioOutputType('unknown');
+          } else {
+            console.log('🎧 AudioSession.currentRoute not available');
+            // Fallback: assume no headphones
+            setIsHeadphoneConnected(false);
+            setAudioOutputType('speaker');
+          }
+        } catch (audioError) {
+          console.log('🎧 Audio session error:', audioError.message);
+          // For now, default to allowing access to avoid blocking users
+          // In production, you might want to be more restrictive
+          setIsHeadphoneConnected(false);
+          setAudioOutputType('speaker');
         }
+      } catch (error) {
+        console.log('🎧 Headphone detection error:', error.message);
+        // Default state
+        setIsHeadphoneConnected(false);
+        setAudioOutputType('speaker');
       }
     };
 
-    initializeDetection();
+    // Initial check
+    checkHeadphoneConnection();
+
+    // Set up polling for changes (every 2 seconds)
+    interval = setInterval(checkHeadphoneConnection, 2000);
 
     // Cleanup
     return () => {
-      if (audioJackListener) {
-        audioJackListener.remove();
+      if (interval) {
+        clearInterval(interval);
       }
     };
   }, []);
