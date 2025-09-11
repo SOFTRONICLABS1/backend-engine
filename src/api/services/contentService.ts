@@ -149,8 +149,8 @@ class ContentService {
     try {
       console.log('=================== Fetching My Content ===================');
       
-      // Use the public endpoint with per_page parameter
-      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.PUBLIC}?page=${page}&per_page=${limit}`);
+      // Use the my-content endpoint that filters by authenticated user
+      const response = await apiClient.get(`${API_ENDPOINTS.CONTENT.MY_CONTENT}?page=${page}&per_page=${limit}`);
       
       console.log('✅ My content fetched successfully');
       console.log('=================== My Content Fetched ===================');
