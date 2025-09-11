@@ -26,6 +26,7 @@ import { responsivePlatformValue } from '../../utils/responsive';
 
 const { height: screenHeight } = Dimensions.get('window');
 
+
 export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = true, isScreenFocused = true, isCurrentItem = true }) => {
   const { theme } = useTheme();
   const [liked, setLiked] = useState(false);
@@ -89,12 +90,12 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
       if (!expires || !dateParam) return false;
       
       // Parse the X-Amz-Date parameter (format: YYYYMMDDTHHMMSSZ)
-      const year = parseInt(dateParam.substr(0, 4));
-      const month = parseInt(dateParam.substr(4, 2)) - 1; // Month is 0-indexed
-      const day = parseInt(dateParam.substr(6, 2));
-      const hour = parseInt(dateParam.substr(9, 2));
-      const minute = parseInt(dateParam.substr(11, 2));
-      const second = parseInt(dateParam.substr(13, 2));
+      const year = parseInt(dateParam.substring(0, 4));
+      const month = parseInt(dateParam.substring(4, 6)) - 1; // Month is 0-indexed
+      const day = parseInt(dateParam.substring(6, 8));
+      const hour = parseInt(dateParam.substring(9, 11));
+      const minute = parseInt(dateParam.substring(11, 13));
+      const second = parseInt(dateParam.substring(13, 15));
       
       const signedDate = new Date(Date.UTC(year, month, day, hour, minute, second));
       const expiryDate = new Date(signedDate.getTime() + (parseInt(expires) * 1000));
@@ -770,7 +771,7 @@ const styles = StyleSheet.create({
   },
   bottomContent: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 50 : 45, // iOS: 50px, Android: moved much higher to 80px
+    bottom: Platform.OS === 'ios' ? 50 : 19, // iOS: 50px, Android: moved much higher to 80px
     left: 16,
     right: 16,
   },
