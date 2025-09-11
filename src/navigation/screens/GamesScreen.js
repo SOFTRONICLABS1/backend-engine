@@ -15,10 +15,12 @@ import { useTheme } from '../../theme/ThemeContext';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import gamesService from '../../api/services/gamesService';
 import { initializeGlobalMicrophone } from '../../hooks/useGlobalMicrophoneManager';
+import useHeadphoneDetection from '../../hooks/useHeadphoneDetection';
 
 
 export default function GamesScreen() {
   const { theme } = useTheme();
+  const { isHeadphoneConnected, audioOutputType } = useHeadphoneDetection();
   const navigation = useNavigation();
   const route = useRoute();
   const { contentId, contentTitle, contentDescription } = route.params || {};
@@ -93,6 +95,16 @@ export default function GamesScreen() {
   }, []);
 
   const handleGamePress = (game) => {
+    // Check for headphone connection first
+    if (!isHeadphoneConnected) {
+      Alert.alert(
+        'Headphones Required',
+        'Please connect wired headphones or Bluetooth audio device to play games.',
+        [{ text: 'OK', style: 'default' }]
+      );
+      return;
+    }
+
     if (isMicrophoneLoading) {
       Alert.alert(
         'Microphone Loading',
@@ -143,16 +155,30 @@ export default function GamesScreen() {
 
   const renderGameItem = ({ item }) => (
     <TouchableOpacity 
-      style={styles.gameItem} 
+      style={[
+        styles.gameItem,
+        !isHeadphoneConnected && styles.gameItemDisabled
+      ]} 
       onPress={() => handleGamePress(item)}
     >
       <Image 
         source={{ uri: `https://picsum.photos/80/80?random=${item.id}` }} 
-        style={styles.gameIcon} 
+        style={[
+          styles.gameIcon,
+          !isHeadphoneConnected && styles.gameIconDisabled
+        ]} 
       />
-      <Text style={[styles.gameName, { color: theme.text }]} numberOfLines={2}>
+      <Text style={[
+        styles.gameName, 
+        { color: isHeadphoneConnected ? theme.text : theme.textSecondary }
+      ]} numberOfLines={2}>
         {item.title}
       </Text>
+      {!isHeadphoneConnected && (
+        <View style={styles.lockedOverlay}>
+          <Text style={styles.lockedIcon}>🔒</Text>
+        </View>
+      )}
     </TouchableOpacity>
   );
   
@@ -196,6 +222,25 @@ export default function GamesScreen() {
         <Text style={[styles.headerTitle, { color: theme.text }]}>Games</Text>
         <View style={styles.headerPlaceholder} />
       </View>
+
+      {/* Headphone Connection Warning */}
+      {!isHeadphoneConnected && (
+        <View style={[styles.headphoneWarning, { backgroundColor: '#FF4757' }]}>
+          <View style={styles.headphoneWarningContent}>
+            <Text style={styles.headphoneWarningIcon}>🎧</Text>
+            <View style={styles.headphoneWarningTextContainer}>
+              <Text style={styles.headphoneWarningText}>
+                Headphones Required
+              </Text>
+              <Text style={styles.headphoneWarningSubtext}>
+                {audioOutputType === 'speaker' 
+                  ? 'Please connect wired or Bluetooth headphones to play games' 
+                  : `Currently connected: ${audioOutputType}`}
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
 
       {/* Microphone Loading Indicator */}
       {isMicrophoneLoading && (
@@ -358,6 +403,10 @@ const styles = StyleSheet.create({
     width: '18%',
     alignItems: 'center',
     marginRight: '2.5%', // Add right margin for spacing between items
+    position: 'relative',
+  },
+  gameItemDisabled: {
+    opacity: 0.6,
   },
   gameIcon: {
     width: 60,
@@ -365,11 +414,28 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 8,
   },
+  gameIconDisabled: {
+    opacity: 0.5,
+  },
   gameName: {
     fontSize: 12,
     fontWeight: '500',
     textAlign: 'center',
     lineHeight: 16,
+  },
+  lockedOverlay: {
+    position: 'absolute',
+    top: 20,
+    right: 8,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  lockedIcon: {
+    fontSize: 12,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -410,5 +476,36 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: 'center',
     fontWeight: '500',
+  },
+  headphoneWarning: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  headphoneWarningContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headphoneWarningIcon: {
+    fontSize: 32,
+    marginRight: 12,
+  },
+  headphoneWarningTextContainer: {
+    flex: 1,
+    maxWidth: 280,
+  },
+  headphoneWarningText: {
+    color: 'white',
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  headphoneWarningSubtext: {
+    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13,
+    lineHeight: 18,
   },
 });
