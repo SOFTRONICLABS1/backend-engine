@@ -20,7 +20,7 @@ import useHeadphoneDetection from '../../hooks/useHeadphoneDetection';
 
 export default function GamesScreen() {
   const { theme } = useTheme();
-  const { isHeadphoneConnected, audioOutputType } = useHeadphoneDetection();
+  const { isHeadphoneConnected, audioOutputType, isEmulatorMode } = useHeadphoneDetection();
   const navigation = useNavigation();
   const route = useRoute();
   const { contentId, contentTitle, contentDescription } = route.params || {};
@@ -95,8 +95,8 @@ export default function GamesScreen() {
   }, []);
 
   const handleGamePress = (game) => {
-    // Check for headphone connection first
-    if (!isHeadphoneConnected) {
+    // Check for headphone connection first (skip in emulator mode)
+    if (!isHeadphoneConnected && !isEmulatorMode) {
       Alert.alert(
         'Headphones Required',
         'Please connect wired headphones or Bluetooth audio device to play games.',
@@ -153,34 +153,38 @@ export default function GamesScreen() {
     });
   };
 
-  const renderGameItem = ({ item }) => (
-    <TouchableOpacity 
-      style={[
-        styles.gameItem,
-        !isHeadphoneConnected && styles.gameItemDisabled
-      ]} 
-      onPress={() => handleGamePress(item)}
-    >
-      <Image 
-        source={{ uri: `https://picsum.photos/80/80?random=${item.id}` }} 
+  const renderGameItem = ({ item }) => {
+    const shouldShowLocked = !isHeadphoneConnected && !isEmulatorMode;
+    
+    return (
+      <TouchableOpacity 
         style={[
-          styles.gameIcon,
-          !isHeadphoneConnected && styles.gameIconDisabled
+          styles.gameItem,
+          shouldShowLocked && styles.gameItemDisabled
         ]} 
-      />
-      <Text style={[
-        styles.gameName, 
-        { color: isHeadphoneConnected ? theme.text : theme.textSecondary }
-      ]} numberOfLines={2}>
-        {item.title}
-      </Text>
-      {!isHeadphoneConnected && (
-        <View style={styles.lockedOverlay}>
-          <Text style={styles.lockedIcon}>🔒</Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
+        onPress={() => handleGamePress(item)}
+      >
+        <Image 
+          source={{ uri: `https://picsum.photos/80/80?random=${item.id}` }} 
+          style={[
+            styles.gameIcon,
+            shouldShowLocked && styles.gameIconDisabled
+          ]} 
+        />
+        <Text style={[
+          styles.gameName, 
+          { color: shouldShowLocked ? theme.textSecondary : theme.text }
+        ]} numberOfLines={2}>
+          {item.title}
+        </Text>
+        {shouldShowLocked && (
+          <View style={styles.lockedOverlay}>
+            <Text style={styles.lockedIcon}>🔒</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    );
+  };
   
   const renderLoadingSection = (title, subtitle) => (
     <View style={styles.section}>
@@ -223,8 +227,25 @@ export default function GamesScreen() {
         <View style={styles.headerPlaceholder} />
       </View>
 
-      {/* Headphone Connection Warning */}
-      {!isHeadphoneConnected && (
+      {/* Emulator Mode Indicator */}
+      {isEmulatorMode && (
+        <View style={[styles.emulatorModeIndicator, { backgroundColor: '#4CAF50' }]}>
+          <View style={styles.headphoneWarningContent}>
+            <Text style={styles.headphoneWarningIcon}>📱</Text>
+            <View style={styles.headphoneWarningTextContainer}>
+              <Text style={styles.headphoneWarningText}>
+                Emulator Mode Active
+              </Text>
+              <Text style={styles.headphoneWarningSubtext}>
+                Headphone requirement bypassed for development
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+
+      {/* Headphone Connection Warning (only show if not in emulator mode) */}
+      {!isHeadphoneConnected && !isEmulatorMode && (
         <View style={[styles.headphoneWarning, { backgroundColor: '#FF4757' }]}>
           <View style={styles.headphoneWarningContent}>
             <Text style={styles.headphoneWarningIcon}>🎧</Text>
@@ -507,5 +528,12 @@ const styles = StyleSheet.create({
     color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 13,
     lineHeight: 18,
+  },
+  emulatorModeIndicator: {
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
 });

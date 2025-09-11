@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
 
+// Set this to true when developing in emulator to bypass headphone requirement
+const USING_EMULATOR = true;
+
 const useHeadphoneDetection = () => {
   const [isHeadphoneConnected, setIsHeadphoneConnected] = useState(false);
   const [audioOutputType, setAudioOutputType] = useState('speaker');
@@ -10,6 +13,14 @@ const useHeadphoneDetection = () => {
 
     const checkHeadphoneConnection = async () => {
       try {
+        // Bypass headphone check when using emulator
+        if (USING_EMULATOR) {
+          console.log('🎧 Emulator mode: bypassing headphone requirement');
+          setIsHeadphoneConnected(true);
+          setAudioOutputType('emulator');
+          return;
+        }
+        
         // For development and testing, we'll use a simpler approach
         // that doesn't require complex native modules
         
@@ -103,7 +114,8 @@ const useHeadphoneDetection = () => {
 
   return {
     isHeadphoneConnected,
-    audioOutputType, // 'wired', 'bluetooth', 'speaker', or 'unknown'
+    audioOutputType, // 'wired', 'bluetooth', 'speaker', 'emulator', or 'unknown'
+    isEmulatorMode: USING_EMULATOR,
   };
 };
 
