@@ -31,6 +31,7 @@ export const API_ENDPOINTS = {
     CREATE_WITH_S3_KEY: '/content/create-with-s3-key',
     LIST: '/content',
     PUBLIC: '/content/public',
+    MY_CONTENT: '/content/my-content',
     USER: (userId: string) => `/content/user/${userId}`,
     DETAILS: (id: string) => `/content/${id}`,
   },

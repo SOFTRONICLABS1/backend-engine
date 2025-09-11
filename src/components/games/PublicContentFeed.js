@@ -272,8 +272,8 @@ export const PublicContentFeed = ({ navigation }) => {
           renderItem={({ item, index }) => (
             <View style={{ 
                 height: itemHeight,
-                marginTop: Platform.OS === 'android' ? -8 : -7,
-                marginBottom: Platform.OS === 'android' ? -10 : -20,
+                marginTop: Platform.OS === 'android' ? -10 : -7,
+                marginBottom: Platform.OS === 'android' ? 0 : -20,
               }}>
               <GamePreview 
                 musicVideoReel={item} 
