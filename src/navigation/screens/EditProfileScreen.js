@@ -15,9 +15,18 @@ import {
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { 
+  responsiveHeight, 
+  responsiveWidth, 
+  useResponsiveValues 
+} from '../../utils/responsive';
 
 export default function EditProfileScreen({ navigation, route }) {
   const { theme } = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
+  const responsiveValues = useResponsiveValues(safeAreaInsets);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [userData, setUserData] = useState(null);
@@ -361,7 +370,13 @@ export default function EditProfileScreen({ navigation, route }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {/* Header */}
-        <View style={[styles.header, { backgroundColor: theme.surface }]}>
+        <View style={[
+          styles.header, 
+          { 
+            backgroundColor: theme.surface,
+            marginTop: Platform.OS === 'android' ? responsiveHeight(20) : 0,
+          }
+        ]}>
           <TouchableOpacity 
             style={styles.backButton}
             onPress={() => navigation.goBack()}

@@ -14,6 +14,7 @@ import Video from 'react-native-video';
 import { IconSymbol } from './ui/IconSymbol';
 import { useTheme } from '../theme/ThemeContext';
 import contentService from '../api/services/contentService';
+import gamesService from '../api/services/gamesService';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -83,46 +84,35 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
   const [postsPage, setPostsPage] = useState(1);
   const [postsTotalPages, setPostsTotalPages] = useState(1);
   const [postsRefreshing, setPostsRefreshing] = useState(false);
-  const [recentGames, setRecentGames] = useState([
-    {
-      id: '1',
-      title: 'Music Quiz',
-      description: 'Test your music knowledge',
-      icon: 'https://picsum.photos/80/80?random=game1',
-      lastPlayed: '2 hours ago',
-      score: 850,
-      rank: 5,
-    },
-    {
-      id: '2', 
-      title: 'Rhythm Master',
-      description: 'Beat matching game',
-      icon: 'https://picsum.photos/80/80?random=game2',
-      lastPlayed: '1 day ago',
-      score: 1200,
-      rank: 2,
-    },
-    {
-      id: '3',
-      title: 'Song Guess',
-      description: 'Guess the song from lyrics',
-      icon: 'https://picsum.photos/80/80?random=game3', 
-      lastPlayed: '3 days ago',
-      score: 675,
-      rank: 8,
-    },
-    {
-      id: '4',
-      title: 'Beat Drop',
-      description: 'Time your drops perfectly',
-      icon: 'https://picsum.photos/80/80?random=game4',
-      lastPlayed: '1 week ago',
-      score: 950,
-      rank: 4,
-    },
-  ]);
+  const [gamesLoading, setGamesLoading] = useState(false);
+  const [gamesError, setGamesError] = useState(null);
+  const [recentGames, setRecentGames] = useState([]);
   
   const itemWidth = (screenWidth - 80) / 3; // 3 columns with more buffer to account for gaps
+
+  // Calculate time since last played
+  const calculateTimeSinceLastPlayed = (lastPlayedTime) => {
+    try {
+      const lastPlayed = new Date(lastPlayedTime);
+      const now = new Date();
+      const diffInMs = now.getTime() - lastPlayed.getTime();
+      
+      const diffInMinutes = Math.floor(diffInMs / (1000 * 60));
+      const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+      const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+
+      if (diffInMinutes < 60) {
+        return diffInMinutes <= 1 ? '1 min ago' : `${diffInMinutes} mins ago`;
+      } else if (diffInHours < 24) {
+        return diffInHours === 1 ? '1 hour ago' : `${diffInHours} hours ago`;
+      } else {
+        return diffInDays === 1 ? '1 day ago' : `${diffInDays} days ago`;
+      }
+    } catch (error) {
+      console.error('Error calculating time since last played:', error);
+      return 'Recently';
+    }
+  };
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -187,6 +177,20 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
     fetchPosts(1, true);
   }, []);
 
+  // Fetch games when component mounts or games tab is selected
+  useEffect(() => {
+    if (activeTab === 'games') {
+      console.log('🎮 ProfileTabs - Games tab selected, fetching recent games...');
+      fetchRecentGames();
+    }
+  }, [activeTab]);
+
+  // Also fetch games on initial mount
+  useEffect(() => {
+    console.log('🔄 ProfileTabs mounting - fetching recent games...');
+    fetchRecentGames();
+  }, []);
+
   const handlePostsRefresh = () => {
     setPostsRefreshing(true);
     fetchPosts(1, true);
@@ -195,6 +199,47 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
   const handlePostsLoadMore = () => {
     if (!postsLoading && postsPage < postsTotalPages) {
       fetchPosts(postsPage + 1);
+    }
+  };
+
+  // Fetch recent games from API
+  const fetchRecentGames = async () => {
+    if (gamesLoading) return;
+
+    try {
+      setGamesLoading(true);
+      setGamesError(null);
+      
+      console.log('=================== Fetching Recent Games for Profile ===================');
+      
+      const gamesWithDetails = await gamesService.getRecentGamesWithDetails();
+      
+      // Transform the API response to match our UI structure
+      const transformedGames = gamesWithDetails.map((game, index) => ({
+        id: game.game_id,
+        title: game.game_name,
+        description: game.contentDetails?.title || game.content_name || 'Game Content',
+        icon: `https://picsum.photos/80/80?random=game${index + 1}`, // Placeholder icon
+        lastPlayed: game.timeSinceLastPlayed,
+        score: game.score,
+        rank: index + 1, // Simple ranking based on order
+        contentId: game.content_id,
+        contentDetails: game.contentDetails,
+      }));
+
+      setRecentGames(transformedGames);
+      
+      console.log('✅ Recent games fetched and transformed successfully');
+      console.log('=================== Recent Games Fetched ===================');
+      
+    } catch (error) {
+      console.error('Error fetching recent games:', error);
+      setGamesError(error.message || 'Failed to load recent games');
+      
+      // Show empty state on error
+      setRecentGames([]);
+    } finally {
+      setGamesLoading(false);
     }
   };
 
@@ -403,6 +448,35 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
         />
       );
     } else if (activeTab === 'games') {
+      if (gamesLoading && recentGames.length === 0) {
+        return (
+          <View style={[styles.loadingContainer, { backgroundColor: theme.background }]}>
+            <ActivityIndicator size="large" color={theme.primary} />
+            <Text style={[styles.loadingText, { color: theme.textSecondary }]}>
+              Loading recent games...
+            </Text>
+          </View>
+        );
+      }
+
+      if (gamesError && recentGames.length === 0) {
+        return (
+          <View style={[styles.errorContainer, { backgroundColor: theme.background }]}>
+            <Text style={[styles.errorText, { color: theme.textSecondary }]}>
+              {gamesError}
+            </Text>
+            <TouchableOpacity 
+              style={[styles.retryButton, { backgroundColor: theme.primary }]}
+              onPress={fetchRecentGames}
+            >
+              <Text style={[styles.retryButtonText, { color: 'white' }]}>
+                Retry
+              </Text>
+            </TouchableOpacity>
+          </View>
+        );
+      }
+
       return (
         <FlatList
           key="games-list" // Force refresh when switching tabs
@@ -414,6 +488,8 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
           nestedScrollEnabled={false}
           contentContainerStyle={styles.listContainer}
           ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          onRefresh={fetchRecentGames}
+          refreshing={gamesLoading}
         />
       );
     }
@@ -442,9 +518,12 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
                 Games
               </Text>
             </View>
-            {activeTab === 'games' && (
-              <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />
-            )}
+            <View style={[
+              styles.tabUnderline, 
+              { 
+                backgroundColor: activeTab === 'games' ? theme.primary : 'transparent'
+              }
+            ]} />
           </View>
         </TouchableOpacity>
 
@@ -467,9 +546,12 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
                 Posts
               </Text>
             </View>
-            {activeTab === 'posts' && (
-              <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />
-            )}
+            <View style={[
+              styles.tabUnderline, 
+              { 
+                backgroundColor: activeTab === 'posts' ? theme.primary : 'transparent'
+              }
+            ]} />
           </View>
         </TouchableOpacity>
 
@@ -492,9 +574,12 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
                 Playlists
               </Text>
             </View>
-            {activeTab === 'playlists' && (
-              <View style={[styles.tabUnderline, { backgroundColor: theme.primary }]} />
-            )}
+            <View style={[
+              styles.tabUnderline, 
+              { 
+                backgroundColor: activeTab === 'playlists' ? theme.primary : 'transparent'
+              }
+            ]} />
           </View>
         </TouchableOpacity>
 
@@ -588,6 +673,7 @@ const styles = StyleSheet.create({
   },
   tabUnderline: {
     height: 2,
+    width: '100%',
     marginTop: 4,
     borderRadius: 1,
   },
@@ -768,6 +854,28 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderRadius: 8,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  errorText: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  retryButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   // Playlist Card Styles
   playlistCard: {

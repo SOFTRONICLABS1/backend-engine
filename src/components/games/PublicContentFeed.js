@@ -4,7 +4,15 @@ import { GamePreview } from './GamePreview';
 import contentService from '../../api/services/contentService';
 import userService from '../../api/services/userService';
 import { useFocusEffect } from '@react-navigation/native';
-import { responsivePlatformValue } from '../../utils/responsive';
+import { 
+  responsivePlatformValue, 
+  responsiveHeight, 
+  responsiveWidth,
+  debugResponsive,
+  useResponsiveValues,
+  screenData 
+} from '../../utils/responsive';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Transform API content to GamePreview format for public content
 const transformPublicContentToGameFormat = (apiContent, contentDetails = null, userData = null) => {
@@ -81,6 +89,9 @@ const statusBarHeight = Platform.OS === 'ios' ? 0 : StatusBar.currentHeight || 0
 const actualHeight = screenHeight;
 
 export const PublicContentFeed = ({ navigation }) => {
+  const safeAreaInsets = useSafeAreaInsets();
+  const responsiveValues = useResponsiveValues(safeAreaInsets);
+  
   const [currentIndex, setCurrentIndex] = useState(0);
   const [publicContent, setPublicContent] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -89,6 +100,14 @@ export const PublicContentFeed = ({ navigation }) => {
   const [userData, setUserData] = useState({});
   const [isScreenFocused, setIsScreenFocused] = useState(true);
   const flatListRef = useRef(null);
+  
+  // Debug responsive values
+  useEffect(() => {
+    if (__DEV__) {
+      debugResponsive('PublicContentFeed');
+      console.log('📱 Safe area insets:', safeAreaInsets);
+    }
+  }, [safeAreaInsets]);
 
   // Fetch content details for a specific content ID
   const fetchContentDetails = async (contentId) => {
@@ -221,7 +240,8 @@ export const PublicContentFeed = ({ navigation }) => {
     viewAreaCoveragePercentThreshold: 50,
   }).current;
 
-  const itemHeight = actualHeight;
+  // Use proper responsive height that accounts for safe areas
+  const itemHeight = screenData.height;
   
   const getItemLayout = (_, index) => ({
     length: itemHeight,
@@ -233,7 +253,10 @@ export const PublicContentFeed = ({ navigation }) => {
     <View style={{ 
       flex: 1, 
       backgroundColor: 'black',
-      marginTop: Platform.OS === 'ios' ? -80 : 0 // Push content up behind status bar on iOS
+      // Responsive margin that accounts for different device sizes
+      marginTop: Platform.OS === 'ios' ? 
+        responsiveHeight(screenData.isSmallDevice ? -60 : -80) : 
+        0
     }}>
       <StatusBar 
         barStyle="light-content" 
@@ -272,8 +295,8 @@ export const PublicContentFeed = ({ navigation }) => {
           renderItem={({ item, index }) => (
             <View style={{ 
                 height: itemHeight,
-                marginTop: Platform.OS === 'android' ? -10 : -7,
-                marginBottom: Platform.OS === 'android' ? 0 : -20,
+                marginTop: responsiveHeight(Platform.OS === 'android' ? -5 : -3),
+                marginBottom: responsiveHeight(Platform.OS === 'android' ? 0 : -10),
               }}>
               <GamePreview 
                 musicVideoReel={item} 

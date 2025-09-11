@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Switch,
-  Alert
+  Alert,
+  Platform
 } from 'react-native';
 import Colors from "@/Colors"
 import { FormPicker } from "@/components/FormPicker"
@@ -16,6 +17,12 @@ import { GraphicsMode, LanguageType, ThemeType, useConfigStore } from "@/stores/
 import { useNavigation } from "@react-navigation/native"
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { 
+  responsiveHeight, 
+  responsiveWidth, 
+  useResponsiveValues 
+} from '../../utils/responsive';
 
 export function Settings() {
   const config = useConfigStore()
@@ -26,6 +33,8 @@ export function Settings() {
   const navigation = useNavigation()
   const t = useTranslation()
   const { theme } = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
+  const responsiveValues = useResponsiveValues(safeAreaInsets);
   
   const [pushNotifications, setPushNotifications] = useState(true);
   const [emailNotifications, setEmailNotifications] = useState(false);
@@ -210,7 +219,14 @@ export function Settings() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.surface, borderBottomColor: theme.border }]}>
+      <View style={[
+        styles.header, 
+        { 
+          backgroundColor: theme.surface, 
+          borderBottomColor: theme.border,
+          marginTop: Platform.OS === 'android' ? responsiveHeight(20) : 0,
+        }
+      ]}>
         <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
           <IconSymbol name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
