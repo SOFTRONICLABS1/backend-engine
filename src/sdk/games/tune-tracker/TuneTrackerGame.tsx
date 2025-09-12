@@ -143,8 +143,12 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
   const navigation = useNavigation()
   const route = useRoute()
   
-  // Get game params from route (contentId, gameId, payload)
-  const { contentId, gameId, payload } = route.params as any || {}
+  // Get game params from route (payload contains gameId, contentId, etc.)
+  const { payload } = route.params as any || {}
+  
+  // Extract gameId and contentId from payload
+  const gameId = payload?.gameId
+  const contentId = payload?.contentId
   
   // Use payload notes if available, otherwise use props
   const gameNotes = payload?.notes || notes
