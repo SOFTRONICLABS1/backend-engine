@@ -128,7 +128,13 @@ export const UserGamesList = ({ navigation, userId, userName, userDisplayName, u
     const fetchUserContent = async () => {
       try {
         console.log('===== Fetching user content for UserHomeScreen =====');
-        const response = await contentService.getMyContent(1, 20);
+        console.log('🔍 Fetching content for userId:', userId);
+        
+        // If userId is provided, fetch that user's content, otherwise fetch current user's content
+        const response = userId ? 
+          await contentService.getUserContent(userId, 1, 20) : 
+          await contentService.getMyContent(1, 20);
+          
         console.log('===== API Response:', JSON.stringify(response, null, 2), '=====');
         
         if (response.contents && response.contents.length > 0) {
@@ -282,7 +288,7 @@ export const UserGamesList = ({ navigation, userId, userName, userDisplayName, u
           <TouchableOpacity 
             style={{
               position: 'absolute',
-              top: responsivePlatformValue(105, 20), // iOS: higher, Android: moved down
+              top: responsivePlatformValue(115, 30), // iOS: moved down more, Android: moved down more
               left: 9,
               width: 40,
               height: 40,

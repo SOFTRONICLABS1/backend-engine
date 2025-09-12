@@ -362,7 +362,8 @@ export default function ProfileScreen({ navigation }) {
 
   const handlePostPress = (post, allPosts) => {
     navigation.navigate('UserHome', { 
-      userId: 'current_user',
+      // Don't pass userId for current user's profile - UserGamesList will use getMyContent()
+      userId: null,
       userName: userData?.username || 'musiccreator',
       userDisplayName: userData?.signup_username || userData?.username || 'Music Creator',
       userAvatar: userData?.avatar_url || null,

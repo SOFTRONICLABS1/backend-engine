@@ -185,6 +185,32 @@ class ContentService {
       throw error;
     }
   }
+
+  /**
+   * Delete content by ID
+   * @param {string} contentId - Content ID to delete
+   * @returns {Promise} Delete confirmation
+   */
+  async deleteContent(contentId: string) {
+    try {
+      console.log('=================== Deleting Content ===================');
+      console.log('🗑️ Deleting content ID:', contentId);
+      
+      const response = await apiClient.delete(`/content/${contentId}`);
+      
+      console.log('✅ Content deleted successfully');
+      console.log('📋 Response:', JSON.stringify(response.data, null, 2));
+      console.log('=================== Content Deleted ===================');
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ Failed to delete content:', error);
+      if (error.response) {
+        console.error('❌ API Error Response:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw error;
+    }
+  }
 }
 
 export default new ContentService();

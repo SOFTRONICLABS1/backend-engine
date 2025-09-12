@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, SafeAreaView, Modal, Alert, Dimensions, FlatList } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Text, Image, ScrollView, SafeAreaView, Modal, Alert, Dimensions, FlatList, Platform } from 'react-native';
 import { IconSymbol } from '../ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
 import socialService from '../../api/services/socialService';
@@ -810,7 +810,7 @@ const styles = StyleSheet.create({
   },
   row: {
     justifyContent: 'flex-start',
-    marginBottom: 8,
+    marginBottom: Platform.OS === 'android' ? 12 : 8,
     paddingHorizontal: 2,
   },
   gridItem: {
@@ -818,6 +818,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     marginHorizontal: 5,
+    marginBottom: Platform.OS === 'android' ? 15 : 10,
   },
   postThumbnail: {
     width: '100%',

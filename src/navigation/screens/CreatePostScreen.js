@@ -942,14 +942,12 @@ export default function CreatePostScreen({ navigation }) {
         <View style={[styles.section, { backgroundColor: theme.surface }]}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: theme.text }]}>Post Details</Text>
-{/* 
             <TouchableOpacity
               style={[styles.sampleDataButton, { backgroundColor: theme.primary }]}
               onPress={fillSampleData}
             >
               <Text style={styles.sampleDataButtonText}>Fill Sample</Text>
             </TouchableOpacity>
-*/}
           </View>
           
           {/* Video Name */}
