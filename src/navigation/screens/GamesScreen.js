@@ -17,6 +17,26 @@ import gamesService from '../../api/services/gamesService';
 import { initializeGlobalMicrophone } from '../../hooks/useGlobalMicrophoneManager';
 import useHeadphoneDetection from '../../hooks/useHeadphoneDetection';
 
+// Import local game thumbnails
+const gameThumbnails = {
+  flappy: require('../../../assets/thumbnails/flappy.png'),
+  tune: require('../../../assets/thumbnails/tune.jpg'),
+};
+
+// Function to get local thumbnail based on game name
+const getGameThumbnail = (gameTitle) => {
+  const title = gameTitle?.toLowerCase() || '';
+  
+  if (title.includes('flappy') || title.includes('bird')) {
+    return gameThumbnails.flappy;
+  } else if (title.includes('tune') || title.includes('tracker') || title.includes('track')) {
+    return gameThumbnails.tune;
+  }
+  
+  // Fallback to random image if no match found
+  return null;
+};
+
 
 export default function GamesScreen() {
   const { theme } = useTheme();
@@ -165,7 +185,7 @@ export default function GamesScreen() {
         onPress={() => handleGamePress(item)}
       >
         <Image 
-          source={{ uri: `https://picsum.photos/80/80?random=${item.id}` }} 
+          source={getGameThumbnail(item.title) || { uri: `https://picsum.photos/80/80?random=${item.id}` }}
           style={[
             styles.gameIcon,
             shouldShowLocked && styles.gameIconDisabled
@@ -434,6 +454,7 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 12,
     marginBottom: 8,
+    resizeMode: 'contain',
   },
   gameIconDisabled: {
     opacity: 0.5,
