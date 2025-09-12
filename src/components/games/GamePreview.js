@@ -62,13 +62,19 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
   const [isPlaying, setIsPlaying] = useState(true);
   const [captionExpanded, setCaptionExpanded] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [currentVideoUrl, setCurrentVideoUrl] = useState(musicVideoReel?.videoUrl);
+  const [currentVideoUrl, setCurrentVideoUrl] = useState(() => {
+    const initialUrl = musicVideoReel?.videoUrl;
+    console.log('🎬 GamePreview: Initial video URL:', initialUrl);
+    console.log('🎬 GamePreview: Content ID:', musicVideoReel?.contentId);
+    return initialUrl;
+  });
   const [isRefreshingUrl, setIsRefreshingUrl] = useState(false);
   const [isBuffering, setIsBuffering] = useState(true);
   const [isLoaded, setIsLoaded] = useState(false);
   const [loadProgress, setLoadProgress] = useState(0);
   const [showUnmuteIcon, setShowUnmuteIcon] = useState(false);
   const [isOwnContent, setIsOwnContent] = useState(false);
+  const [showOptionsMenu, setShowOptionsMenu] = useState(false);
   
   // Animation refs
   const likeScale = useRef(new Animated.Value(1)).current;
@@ -135,7 +141,18 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
 
   // Function to refresh expired URL
   const refreshVideoUrl = async () => {
-    if (!musicVideoReel?.contentId || isRefreshingUrl) return;
+    if (isRefreshingUrl) return;
+    
+    // Check if we have a contentId
+    if (!musicVideoReel?.contentId) {
+      console.warn('⚠️ Cannot refresh URL - no contentId available');
+      console.log('⚠️ musicVideoReel data:', JSON.stringify(musicVideoReel, null, 2));
+      // Use fallback video if no contentId
+      const fallbackUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+      console.log('📺 Using fallback video URL');
+      setCurrentVideoUrl(fallbackUrl);
+      return;
+    }
     
     try {
       setIsRefreshingUrl(true);
@@ -154,13 +171,19 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
       } else if (newUrl === currentVideoUrl) {
         console.log('⚠️ New URL is same as current URL - no change needed');
       } else {
-        console.log('⚠️ No download_url in content details response');
+        console.log('⚠️ No download_url in content details response - using fallback');
+        const fallbackUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+        setCurrentVideoUrl(fallbackUrl);
       }
     } catch (error) {
       console.error('❌ Failed to refresh video URL:', error);
       if (error.response) {
         console.error('❌ API Error Response:', JSON.stringify(error.response.data, null, 2));
       }
+      // Use fallback video on error
+      console.log('📺 Using fallback video URL due to error');
+      const fallbackUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+      setCurrentVideoUrl(fallbackUrl);
     } finally {
       setIsRefreshingUrl(false);
     }
@@ -239,6 +262,11 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
           const isOwn = currentUserId === contentUserId;
           console.log('🔍 GamePreview: Checking ownership - currentUserId:', currentUserId, 'contentUserId:', contentUserId, 'isOwn:', isOwn);
           setIsOwnContent(isOwn);
+        } else {
+          // For user's own profile when userId is null (using getMyContent), show menu
+          const isOnOwnProfile = !musicVideoReel?.userId && !musicVideoReel?.user?.id;
+          console.log('🔍 GamePreview: On own profile (no userId provided):', isOnOwnProfile);
+          setIsOwnContent(isOnOwnProfile);
         }
       } catch (error) {
         console.error('❌ GamePreview: Failed to check content ownership:', error);
@@ -273,6 +301,40 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
 
     fetchLikeData();
   }, [musicVideoReel?.id]);
+
+  // Handle delete content
+  const handleDeleteContent = async () => {
+    Alert.alert(
+      'Delete Content',
+      'Are you sure you want to delete this content? This action cannot be undone.',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('🗑️ Deleting content:', musicVideoReel.contentId);
+              await contentService.deleteContent(musicVideoReel.contentId);
+              
+              Alert.alert('Success', 'Content deleted successfully', [
+                {
+                  text: 'OK',
+                  onPress: () => navigation.goBack()
+                }
+              ]);
+            } catch (error) {
+              console.error('❌ Failed to delete content:', error);
+              Alert.alert('Error', 'Failed to delete content. Please try again.');
+            }
+          },
+        },
+      ]
+    );
+  };
 
   // Handle screen focus/blur to manage video playback
   useFocusEffect(
@@ -435,7 +497,11 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
 
 
   return (
-    <View style={[styles.container, { height: screenHeight - 150, backgroundColor: AppColors.background }]}>
+    <TouchableOpacity 
+      style={[styles.container, { height: screenHeight - 150, backgroundColor: AppColors.background }]}
+      activeOpacity={1}
+      onPress={() => setShowOptionsMenu(false)}
+    >
       <View style={[styles.gamePreview, { backgroundColor: AppColors.background }]}>
         
         {/* Background video with fallback to image */}
@@ -570,10 +636,45 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
         </View>
 
 
+        {/* 3-dots menu for own content - Top Right */}
+        {isOwnContent && (
+          <View style={styles.topRightOptionsContainer}>
+            <TouchableOpacity 
+              style={styles.topOptionsButton} 
+              onPress={() => setShowOptionsMenu(!showOptionsMenu)}
+            >
+              <IconSymbol 
+                size={24} 
+                name="ellipsis-horizontal" 
+                color="white" 
+              />
+            </TouchableOpacity>
+            
+            {showOptionsMenu && (
+              <View style={styles.topOptionsMenu}>
+                <TouchableOpacity 
+                  style={styles.optionItem} 
+                  onPress={() => {
+                    setShowOptionsMenu(false);
+                    handleDeleteContent();
+                  }}
+                >
+                  <IconSymbol 
+                    size={18} 
+                    name="trash" 
+                    color="#FF3040" 
+                  />
+                  <Text style={styles.optionText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        )}
+
         <View style={[
           styles.topGameTitle,
           {
-            top: responsiveValues.responsiveTop(Platform.OS === 'ios' ? 140 : 45),
+            top: responsiveValues.responsiveTop(Platform.OS === 'ios' ? 130 : 35),
             left: responsiveWidth(16),
             right: responsiveWidth(80),
           }
@@ -585,7 +686,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
         <View style={[
           styles.bottomContent,
           {
-            bottom: responsiveValues.responsiveBottom(Platform.OS === 'ios' ? 50 : 45),
+            bottom: responsiveValues.responsiveBottom(Platform.OS === 'ios' ? 40 : 35),
             left: responsiveWidth(16),
             right: responsiveWidth(16),
           }
@@ -683,7 +784,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
 
         </View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -917,5 +1018,41 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
     letterSpacing: 0.3,
+  },
+  topRightOptionsContainer: {
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 115 : 30, // Same as back button
+    right: 9,
+    zIndex: 9999,
+  },
+  topOptionsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  topOptionsMenu: {
+    position: 'absolute',
+    right: 0,
+    top: 45,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 8,
+    paddingVertical: 8,
+    minWidth: 120,
+    zIndex: 1000,
+  },
+  optionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 12,
+  },
+  optionText: {
+    color: 'white',
+    fontSize: 14,
+    fontWeight: '500',
   },
 });
