@@ -107,7 +107,8 @@ export default function GamePayloadScreen() {
       const payload = {
         userId: userId,
         gameId: gameId,
-        notes: notes
+        notes: notes,
+        contentId: contentId
       };
 
       console.log('🚀 Launching game with payload:', payload);

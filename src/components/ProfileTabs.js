@@ -16,6 +16,26 @@ import { useTheme } from '../theme/ThemeContext';
 import contentService from '../api/services/contentService';
 import gamesService from '../api/services/gamesService';
 
+// Import local game thumbnails
+const gameThumbnails = {
+  flappy: require('../../assets/thumbnails/flappy.png'),
+  tune: require('../../assets/thumbnails/tune.jpg'),
+};
+
+// Function to get local thumbnail based on game name
+const getGameThumbnail = (gameTitle) => {
+  const title = gameTitle?.toLowerCase() || '';
+  
+  if (title.includes('flappy') || title.includes('bird')) {
+    return gameThumbnails.flappy;
+  } else if (title.includes('tune') || title.includes('tracker') || title.includes('track')) {
+    return gameThumbnails.tune;
+  }
+  
+  // Fallback to random image if no match found
+  return null;
+};
+
 const { width: screenWidth } = Dimensions.get('window');
 
 // Sample posts data
@@ -382,7 +402,7 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
       >
         <View style={styles.gameCardContent}>
           <View style={styles.gameImageContainer}>
-            <Image source={{ uri: item.icon }} style={styles.gameIcon} />
+            <Image source={getGameThumbnail(item.title) || { uri: item.icon || `https://picsum.photos/60/60?random=${item.id}` }} style={styles.gameIcon} />
             <View style={[styles.rankBadge, { backgroundColor: theme.primary }]}>
               <Text style={styles.rankText}>#{item.rank}</Text>
             </View>
@@ -951,6 +971,7 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 12,
+    resizeMode: 'contain',
   },
   rankBadge: {
     position: 'absolute',
