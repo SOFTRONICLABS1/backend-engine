@@ -6,6 +6,7 @@
 import apiClient from '../client';
 import { API_ENDPOINTS } from '../config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { GameScorePayload, GameScoreResponse } from '../../types/GameScore';
 
 const BASE_URL = 'https://24pw8gqd0i.execute-api.us-east-1.amazonaws.com/api/v1';
 
@@ -133,10 +134,10 @@ class GamesService {
   /**
    * Submit game score
    * @param {string} gameId - Game ID
-   * @param {object} scoreData - Score data
-   * @returns {Promise} Score submission result
+   * @param {GameScorePayload} scoreData - Score data
+   * @returns {Promise<GameScoreResponse>} Score submission result
    */
-  async submitScore(gameId: string, scoreData: any) {
+  async submitScore(gameId: string, scoreData: GameScorePayload): Promise<GameScoreResponse> {
     try {
       console.log('=================== Submitting Game Score ===================');
       

@@ -1,16 +1,20 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
-import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform, Image as RNImage } from "react-native"
-import { Canvas, Rect, Circle, Text as SkiaText, matchFont } from "@shopify/react-native-skia"
+import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform, Image as RNImage, Animated } from "react-native"
+import { Canvas, Rect, Circle, Text as SkiaText, matchFont, Path, Skia, Group } from "@shopify/react-native-skia"
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
-import { useNavigation } from "@react-navigation/native"
+import { useNavigation, useRoute } from "@react-navigation/native"
+import { GameMenu, GameOverScreen, type Difficulty, type BPM, type GameStats } from '../shared/components'
 import { useGameScreenMicrophone } from "@/hooks/useGameScreenMicrophone"
 import { useGlobalPitchDetection } from "@/hooks/useGlobalPitchDetection"
 import { NOTE_FREQUENCIES } from "@/utils/noteParser"
 import { handleGameExit } from "../../../utils/gameNavigation"
+import { calculateNoteAccuracy, calculateCycleAccuracy, calculateOverallAccuracy } from "@/utils/pitchAccuracy"
 import { GuitarHarmonics } from "@/utils/GuitarHarmonics"
 import { Audio } from "expo-av"
 import { encode as btoa } from "base-64"
 import DSPModule from "@/../specs/NativeDSPModule"
+import GameState from "../../../services/GameState"
+import GameScore from "../../../services/GameScore"
 
 // Create system font
 const systemFont = matchFont({
@@ -166,8 +170,6 @@ interface ScreenShake {
   intensity: number
 }
 
-type Difficulty = 'easy' | 'medium' | 'hard'
-type BPM = 20 | 40 | 60 | 120
 
 export interface FlappyBirdGameProps {
   notes?: {
@@ -189,6 +191,16 @@ export interface FlappyBirdGameProps {
 export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
+  const route = useRoute()
+  
+  // Get game params from route (contentId, gameId, payload)
+  const { contentId, gameId, payload } = route.params as any || {}
+  
+  // Use payload notes if available, otherwise use props
+  const gameNotes = payload?.notes || notes
+  
+  // GameState management
+  const gameStateRef = useRef<GameState | null>(null)
   
   
   // Use the game screen microphone hook for simplified microphone management
@@ -233,6 +245,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [visualFeedback, setVisualFeedback] = useState({ glow: false, pulse: false, correctPitch: false })
   const particleIdCounter = useRef(0)
   
+  // Progress circle state for current note being sung
+  const [currentNoteProgress, setCurrentNoteProgress] = useState<number>(0)
+  const [isInTargetPipe, setIsInTargetPipe] = useState<boolean>(false)
+  
   // Game mechanics
   const gameLoopRef = useRef<number>()
   const lastNoteTime = useRef<number>(0)
@@ -241,21 +257,89 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const currentToleranceRef = useRef<number>(DIFFICULTY_SETTINGS.easy.frequencyTolerance) // Tolerance for current difficulty
   const deathAnimationTimer = useRef<NodeJS.Timeout | null>(null)
   
+  // Initialize GameState (without start time - that's set when game actually starts)
+  const initializeGameState = useCallback(() => {
+    const gameState = new GameState()
+    gameState.setGameId(gameId || 'flappy-bird-default')
+    gameState.setContentId(contentId || 'default-content')
+    gameState.setGameType('flappy-bird')
+    gameStateRef.current = gameState
+    
+    console.log('🎮 FlappyBird: GameState initialized', {
+      gameId: gameState.getGameId(),
+      contentId: gameState.getContentId()
+    })
+  }, [gameId, contentId])
+
+  // Submit game score
+  const submitGameScore = useCallback(async () => {
+    if (!gameStateRef.current) {
+      console.warn('🎮 FlappyBird: No GameState found, skipping score submission')
+      return
+    }
+
+    try {
+      // Update final game state (end time is set by caller before calling this)
+      const gameState = gameStateRef.current
+      gameState.setScore(score)
+      gameState.setNumberOfCycles(cycle)
+      
+      // Calculate overall accuracy from note accuracies
+      const overallAccuracy = noteAccuracies.length > 0 
+        ? noteAccuracies.reduce((sum, acc) => sum + acc, 0) / noteAccuracies.length 
+        : 0
+      
+      gameState.setAccuracy(overallAccuracy)
+      gameState.setLevelConfig({
+        level: difficulty,
+        bpm: bpm
+      })
+
+      console.log('🎮 FlappyBird: Submitting score...', {
+        score,
+        accuracy: overallAccuracy,
+        cycles: cycle,
+        difficulty,
+        bpm,
+        gameId: gameState.getGameId(),
+        contentId: gameState.getContentId(),
+        startTime: gameState.getStartTime(),
+        endTime: gameState.getEndTime(),
+        levelConfig: gameState.getLevelConfig()
+      })
+
+      // Create and submit GameScore
+      const gameScore = await GameScore.create(gameState)
+      const result = await gameScore.submitToAPI()
+      
+      if (result.success) {
+        console.log('✅ FlappyBird: Score submitted successfully')
+      } else {
+        console.error('❌ FlappyBird: Score submission failed:', result.error)
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ FlappyBird: Error submitting score:', error)
+      return { success: false, error: error.message }
+    }
+  }, [score, cycle, noteAccuracies, difficulty, bpm])
+  
   // Accuracy tracking refs
   const currentPipeForAccuracy = useRef<Pipe | null>(null) // Current pipe being measured for accuracy
   const accuracySamples = useRef<{frequency: number, timestamp: number}[]>([]) // Pitch samples for current note
   
   // Process notes from payload or use default sequence
   const noteSequence: Note[] = useMemo(() => {
-    if (notes && notes.measures.length > 0) {
+    if (gameNotes && gameNotes.measures.length > 0) {
       // Convert payload notes to game notes
-      const gameNotes: Note[] = []
-      notes.measures.forEach(measure => {
+      const convertedNotes: Note[] = []
+      gameNotes.measures.forEach(measure => {
         measure.notes.forEach(note => {
           // Convert pitch string to frequency
           const frequency = NOTE_FREQUENCIES[note.pitch as keyof typeof NOTE_FREQUENCIES]
           if (frequency) {
-            gameNotes.push({
+            convertedNotes.push({
               frequency,
               duration: note.duration,
               name: note.pitch
@@ -263,10 +347,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           }
         })
       })
-      return gameNotes.length > 0 ? gameNotes : getDefaultNotes()
+      return convertedNotes.length > 0 ? convertedNotes : getDefaultNotes()
     }
     return getDefaultNotes()
-  }, [notes])
+  }, [gameNotes])
 
   function getDefaultNotes(): Note[] {
     return [
@@ -398,35 +482,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     return height - (normalized * height)
   }, [height])
   
-  // Pitch accuracy calculation functions
-  const calculateNoteAccuracy = useCallback((sungFrequency: number, targetFrequency: number): number => {
-    /**
-     * PITCH ACCURACY PER NOTE FORMULA:
-     * Accuracy for a note = max(0, (1 - (absolute value of (sung frequency - target frequency) / target frequency)) × 100)
-     * 
-     * Example: Sung 105Hz, Target 120Hz
-     * Accuracy = max(0, (1 - |105 - 120| / 120) × 100) = max(0, (1 - 15/120) × 100) = 87.5%
-     */
-    const frequencyDifference = Math.abs(sungFrequency - targetFrequency)
-    const relativeError = frequencyDifference / targetFrequency
-    const accuracy = Math.max(0, (1 - relativeError) * 100)
-    return accuracy
-  }, [])
+  // Note: Using modular pitch accuracy utility
   
-  const calculateCycleAccuracy = useCallback((noteAccuraciesInCycle: number[]): number => {
-    if (noteAccuraciesInCycle.length === 0) return 0
-    /**
-     * PITCH ACCURACY PER CYCLE FORMULA:
-     * Accuracy for a cycle = (sum of all note accuracies in the cycle) / (number of notes in the cycle)
-     * 
-     * Example: Note accuracies [87.5, 92.3, 88.1, 90.4, 91.7] in a 5-note cycle
-     * Cycle Accuracy = (87.5 + 92.3 + 88.1 + 90.4 + 91.7) / 5 = 450.0 / 5 = 90.0%
-     * 
-     * IMPORTANT: Only completed cycles are included. Incomplete cycles are excluded.
-     */
-    const sum = noteAccuraciesInCycle.reduce((acc, accuracy) => acc + accuracy, 0)
-    return sum / noteAccuraciesInCycle.length
-  }, [])
+  // Note: Using modular pitch accuracy utility for cycle calculations
   
   // Particle system functions
   const createParticles = useCallback((x: number, y: number, type: Particle['type'], count: number = 5) => {
@@ -526,7 +584,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     
     // Priority 1: Use cycle accuracy if available (user completed at least one full cycle)
     if (cycleAccuracies.length > 0) {
-      const overallCycleAccuracy = cycleAccuracies.reduce((acc, accuracy) => acc + accuracy, 0) / cycleAccuracies.length
+      const overallCycleAccuracy = calculateOverallAccuracy(cycleAccuracies)
       return { noteAccuracy: null, cycleAccuracy: overallCycleAccuracy }
     }
     
@@ -535,7 +593,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     if (completedCycles > 0) {
       // Only use notes from completed cycles, exclude any incomplete cycle notes
       const completedCycleNotes = noteAccuracies.slice(0, completedCycles * noteSequence.length)
-      const overallNoteAccuracy = completedCycleNotes.reduce((acc, accuracy) => acc + accuracy, 0) / completedCycleNotes.length
+      const overallNoteAccuracy = calculateOverallAccuracy(completedCycleNotes)
       return { noteAccuracy: overallNoteAccuracy, cycleAccuracy: null }
     }
     
@@ -665,12 +723,42 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           isPitchDetectedRef.current = true;
           lastPitchTimeRef.current = currentTime;
           
-          // Check if pitch matches any nearby pipes for visual feedback
+          // Check if pitch matches any nearby pipes for visual feedback and progress tracking
+          let foundTargetPipe = false
           pipes.forEach(pipe => {
+            // Check if bird is near this pipe
             if (bird.x + BIRD_SIZE > pipe.x - 50 && bird.x < pipe.x + pipe.width + 50) {
               const tolerance = currentToleranceRef.current;
               const targetFreq = pipe.note.frequency;
               const isWithinThreshold = Math.abs(detectedPitch - targetFreq) <= tolerance;
+              
+              // Calculate progress based on how much of the pipe width the bird has traversed
+              const pipeLeftEdge = pipe.x
+              const pipeRightEdge = pipe.x + pipe.width
+              const birdCenter = bird.x + BIRD_SIZE / 2
+              
+              let progress = 0
+              
+              // Calculate progress based on bird's position relative to pipe width
+              if (birdCenter <= pipeLeftEdge) {
+                // Bird hasn't reached the pipe yet
+                progress = 0
+              } else if (birdCenter >= pipeRightEdge) {
+                // Bird has completely passed through the pipe
+                progress = 100
+              } else {
+                // Bird is inside the pipe - calculate how much width has been traversed
+                const traversedWidth = birdCenter - pipeLeftEdge
+                const totalWidth = pipeRightEdge - pipeLeftEdge
+                progress = Math.min(100, Math.max(0, (traversedWidth / totalWidth) * 100))
+              }
+              
+              // Update progress state for any pipe the bird is near
+              if (progress > 0) {
+                foundTargetPipe = true
+                setIsInTargetPipe(true)
+                setCurrentNoteProgress(progress)
+              }
               
               if (isWithinThreshold) {
                 triggerVisualFeedback('correctPitch', 100);
@@ -681,6 +769,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
               }
             }
           });
+          
+          // Reset progress if no target pipe found
+          if (!foundTargetPipe) {
+            setIsInTargetPipe(false)
+            setCurrentNoteProgress(0)
+          }
         } else {
           // If no pitch for more than 200ms, stop flying
           if (currentTime - lastPitchTimeRef.current > 200) {
@@ -873,7 +967,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             if (currentPipeForAccuracy.current?.id === pipe.id && accuracySamples.current.length > 0) {
               // Calculate average sung frequency for this note
               const avgSungFreq = accuracySamples.current.reduce((sum, sample) => sum + sample.frequency, 0) / accuracySamples.current.length
-              const noteAccuracy = calculateNoteAccuracy(avgSungFreq, pipe.note.frequency)
+              const noteAccuracy = calculateNoteAccuracy({ targetFrequency: pipe.note.frequency, sungFrequency: avgSungFreq })
               
               // Add to note accuracies
               setNoteAccuracies(prev => [...prev, noteAccuracy])
@@ -896,7 +990,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
               const startIndex = Math.max(0, noteAccuracies.length - noteSequence.length + 1)
               const cycleNoteAccuracies = noteAccuracies.slice(startIndex)
               if (cycleNoteAccuracies.length > 0) {
-                const overallCycleAccuracy = cycleNoteAccuracies.reduce((sum, acc) => sum + acc, 0) / cycleNoteAccuracies.length
+                const overallCycleAccuracy = calculateCycleAccuracy({ noteAccuracies: cycleNoteAccuracies })
                 setCycleAccuracies(prev => [...prev, overallCycleAccuracy])
                 
                 // Log cycle completion
@@ -945,7 +1039,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             // Calculate cycle accuracy from the last noteSequence.length notes
             const lastNoteAccuracies = noteAccuracies.slice(-noteSequence.length)
             if (lastNoteAccuracies.length === noteSequence.length) {
-              const cycleAccuracy = calculateCycleAccuracy(lastNoteAccuracies)
+              const cycleAccuracy = calculateCycleAccuracy({ noteAccuracies: lastNoteAccuracies })
               setCycleAccuracies(prevCycles => [...prevCycles, cycleAccuracy])
             }
             
@@ -1113,8 +1207,21 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     }
   }, [gameState, bird, pipes, playGuitarHarmonic]) // Include dependencies to ensure we have latest values
   
-  // Start game
-  const startGame = useCallback(() => {
+  // Start game with settings from menu (or restart with current settings)
+  const startGame = useCallback((selectedDifficulty?: Difficulty, selectedBpm?: BPM) => {
+    // Update settings if provided
+    if (selectedDifficulty) setDifficulty(selectedDifficulty)
+    if (selectedBpm) setBpm(selectedBpm)
+    
+    // Initialize GameState for new game session
+    initializeGameState()
+    
+    // Set start time when user actually starts playing
+    if (gameStateRef.current) {
+      gameStateRef.current.setStartTime(new Date().toISOString())
+      console.log('🎮 FlappyBird: Game started at', gameStateRef.current.getStartTime())
+    }
+    
     // Clean up any existing harmonic checker interval
     if (harmonicCheckIntervalRef.current) {
       clearInterval(harmonicCheckIntervalRef.current)
@@ -1140,7 +1247,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     currentPipeForAccuracy.current = null
     accuracySamples.current = []
     // Reset tolerance based on difficulty
-    currentToleranceRef.current = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance
+    const currentDifficulty = selectedDifficulty || difficulty
+    currentToleranceRef.current = DIFFICULTY_SETTINGS[currentDifficulty].frequencyTolerance
     // Reset harmonic tracking
     harmonicsPlayedRef.current.clear()
     lastHarmonicTimeRef.current = {}
@@ -1153,15 +1261,26 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setParticles([])
     setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
     setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
+    setCurrentNoteProgress(0)
+    setIsInTargetPipe(false)
     particleIdCounter.current = 0
     setGameState('playing')
     const now = Date.now()
     lastNoteTime.current = now
     gameStartTime.current = now // Track when game started
-  }, [width, height, difficulty])
+  }, [width, height, initializeGameState])
   
   // Reset game
-  const resetGame = useCallback(() => {
+  const resetGame = useCallback(async () => {
+    // Set end time when user clicks menu button
+    if (gameStateRef.current) {
+      gameStateRef.current.setEndTime(new Date().toISOString())
+      console.log('🎮 FlappyBird: Game ended (menu clicked) at', gameStateRef.current.getEndTime())
+    }
+    
+    // Submit score before resetting
+    await submitGameScore()
+    
     // Clean up any existing harmonic checker interval
     if (harmonicCheckIntervalRef.current) {
       clearInterval(harmonicCheckIntervalRef.current)
@@ -1201,8 +1320,13 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setParticles([])
     setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
     setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
+    setCurrentNoteProgress(0)
+    setIsInTargetPipe(false)
     particleIdCounter.current = 0
-  }, [width, height, difficulty])
+    
+    // Clear GameState
+    gameStateRef.current = null
+  }, [width, height, difficulty, submitGameScore])
   
   // Render game canvas
   const renderGame = useMemo(() => {
@@ -1230,24 +1354,65 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           />
         ))}
         
-        {/* Visual feedback effects */}
-        {visualFeedback.correctPitch && (
-          <Circle
-            cx={bird.x + BIRD_SIZE/2}
-            cy={bird.y + BIRD_SIZE/2}
-            r={BIRD_SIZE * 0.8}
-            color="rgba(76, 175, 80, 0.3)"
-          />
-        )}
-        
-        {visualFeedback.glow && (
-          <Circle
-            cx={bird.x + BIRD_SIZE/2}
-            cy={bird.y + BIRD_SIZE/2}
-            r={BIRD_SIZE * 1.2}
-            color="rgba(255, 215, 0, 0.4)"
-          />
-        )}
+        {/* Progress circle behind bird when in target pipe */}
+        {pitch > 0 && isInTargetPipe && currentNoteProgress > 0 && (() => {
+          const centerX = bird.x + BIRD_SIZE / 2
+          const centerY = bird.y + BIRD_SIZE / 2
+          const radius = 25
+          
+          // Determine color based on progress percentage
+          const getProgressColor = (progress: number) => {
+            if (progress < 30) return "rgba(255, 107, 107, 0.7)" // Red
+            if (progress < 60) return "rgba(255, 255, 0, 0.7)" // Yellow
+            if (progress < 90) return "rgba(255, 165, 0, 0.7)" // Orange
+            return "rgba(0, 255, 0, 0.7)" // Green
+          }
+          
+          const progressColor = getProgressColor(currentNoteProgress)
+          
+          // Create pie chart path for progress (clockwise from top)
+          const createPiePath = () => {
+            const path = Skia.Path.Make()
+            const startAngle = -Math.PI / 2 // Start from top (-90 degrees)
+            // For clockwise rotation, we add the progress angle directly
+            const sweepAngle = (currentNoteProgress / 100) * 2 * Math.PI
+            
+            if (currentNoteProgress >= 100) {
+              // Full circle
+              path.addCircle(centerX, centerY, radius)
+            } else if (currentNoteProgress > 0) {
+              // Create pie slice (clockwise from top)
+              path.moveTo(centerX, centerY) // Center point
+              path.lineTo(centerX, centerY - radius) // Start at top
+              
+              // Create points along the arc (clockwise)
+              const steps = Math.max(8, Math.floor(currentNoteProgress / 2)) // More steps for smoother arc
+              for (let i = 1; i <= steps; i++) {
+                const angle = startAngle + (i / steps) * sweepAngle
+                const x = centerX + radius * Math.cos(angle)
+                const y = centerY + radius * Math.sin(angle)
+                path.lineTo(x, y)
+              }
+              
+              path.lineTo(centerX, centerY) // Back to center
+            }
+            path.close()
+            return path
+          }
+          
+          const piePath = createPiePath()
+          
+          return (
+            <Group>
+              {/* Background circle */}
+              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.1)" />
+              {/* Progress pie */}
+              <Path path={piePath} color={progressColor} style="fill" />
+              {/* Border circle */}
+              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.3)" style="stroke" strokeWidth={1} />
+            </Group>
+          )
+        })()}
         
         {/* Note labels in the gap - rendered on Canvas */}
         {pipes.map(pipe => (
@@ -1292,216 +1457,48 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     )
   }
 
-  // Render menu
+  // Render menu using shared component
   if (gameState === 'menu') {
     return (
-      <View style={styles.container}>
-        {/* Background matching score page */}
-        <View style={styles.scoreBackground}>
-          <View style={styles.scoreGradientOverlay} />
-        </View>
-        
-        {/* Back button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => handleGameExit(navigation as any)}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        
-        <View style={styles.menuContainer}>
-          {/* Game name at top */}
-          <Text style={styles.title}>Pitch Bird</Text>
-          
-          {/* Difficulty buttons - 3 horizontally aligned */}
-          <View style={styles.settingsContainer}>
-            <Text style={styles.settingsTitle}>Difficulty</Text>
-            <View style={styles.buttonRow}>
-              {(['easy', 'medium', 'hard'] as Difficulty[]).map(diff => (
-                <TouchableOpacity
-                  key={diff}
-                  style={[
-                    styles.settingButton,
-                    difficulty === diff && styles.selectedButton
-                  ]}
-                  onPress={() => setDifficulty(diff)}
-                >
-                  <Text style={[
-                    styles.buttonText,
-                    difficulty === diff && styles.selectedButtonText
-                  ]}>
-                    {diff.charAt(0).toUpperCase() + diff.slice(1)}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-          
-          {/* BPM buttons - horizontally aligned */}
-          <View style={styles.settingsContainer}>
-            <Text style={styles.settingsTitle}>BPM</Text>
-            <View style={styles.buttonRow}>
-              {([20, 40, 60, 120] as BPM[]).map(bpmValue => (
-                <TouchableOpacity
-                  key={bpmValue}
-                  style={[
-                    styles.settingButton,
-                    bpm === bpmValue && styles.selectedButton
-                  ]}
-                  onPress={() => setBpm(bpmValue)}
-                >
-                  <Text style={[
-                    styles.buttonText,
-                    bpm === bpmValue && styles.selectedButtonText
-                  ]}>
-                    {bpmValue}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-          
-          {/* Start game button at bottom */}
-          <TouchableOpacity style={styles.playButton} onPress={startGame}>
-            <Ionicons name="play" size={20} color="#fff" />
-            <Text style={styles.playButtonText}>Start Game</Text>
-          </TouchableOpacity>
-          
-          {!isActive && (
-            <View style={styles.warningContainer}>
-              <MaterialCommunityIcons name="microphone-off" size={20} color="#ff6b6b" />
-              <Text style={styles.warningText}>
-                {micAccess !== "granted" ? "Microphone access required" : "Initializing microphone..."}
-              </Text>
-            </View>
-          )}
-        </View>
-      </View>
+      <GameMenu
+        gameName="Pitch Bird"
+        onStartGame={startGame}
+        micAccess={micAccess}
+        isActive={isActive}
+        showDifficulty={true}
+        showBPM={true}
+      />
     )
   }
   
-  // Render game over screen
+  // Render game over screen using shared component
   if (gameState === 'gameOver') {
+    const stats: GameStats = {
+      score,
+      noteAccuracies,
+      cycleAccuracies,
+      completedCycles: cycle
+    }
+    
     return (
-      <View style={styles.scoreMainContainer}>
-        {/* Enhanced Background */}
-        <View style={styles.scoreBackground}>
-          <View style={styles.scoreGradientOverlay} />
+      <GameOverScreen
+        gameName="Pitch Bird"
+        stats={stats}
+        onPlayAgain={async () => {
+          // Set end time when user clicks play again button
+          if (gameStateRef.current) {
+            gameStateRef.current.setEndTime(new Date().toISOString())
+            console.log('🎮 FlappyBird: Game ended (play again clicked) at', gameStateRef.current.getEndTime())
+          }
           
-          {/* Floating score elements */}
-          <View style={styles.scoreFloatingElement1} />
-          <View style={styles.scoreFloatingElement2} />
-        </View>
-        
-        <View style={styles.enhancedGameOverContainer}>
-          {/* Enhanced Title Section */}
-          <View style={styles.gameOverTitleSection}>
-            <View style={styles.gameOverTitleGlow} />
-            <Text style={styles.enhancedGameOverTitle}>🎵 Game Complete!</Text>
-            <View style={styles.gameOverSubtitleContainer}>
-              <Ionicons name="trophy" size={20} color="#FFD700" />
-              <Text style={styles.gameOverSubtitle}>Your Performance Summary</Text>
-            </View>
-          </View>
-
-          {/* Enhanced Score Display */}
-          <View style={styles.mainScoreContainer}>
-            <View style={styles.scoreIconContainer}>
-              <Ionicons name="musical-notes" size={32} color="#FFD700" />
-            </View>
-            <Text style={styles.enhancedScoreText}>{score}</Text>
-            <Text style={styles.scoreLabel}>Notes Completed</Text>
-          </View>
-          
-          {/* Enhanced Accuracy Display */}
-          <View style={styles.enhancedAccuracySection}>
-            <View style={styles.accuracyHeader}>
-              <Ionicons name="analytics" size={24} color="#4CAF50" />
-              <Text style={styles.accuracySectionTitle}>Accuracy Breakdown</Text>
-            </View>
-            
-            <View style={styles.accuracyGrid}>
-              {/* Note Accuracy Card */}
-              {noteAccuracies.length > 0 && (
-                <View style={styles.accuracyCard}>
-                  <View style={styles.accuracyCardHeader}>
-                    <Ionicons name="musical-note" size={20} color="#2196F3" />
-                    <Text style={styles.accuracyCardTitle}>Note Accuracy</Text>
-                  </View>
-                  <Text style={styles.accuracyCardValue}>
-                    {(noteAccuracies.reduce((sum, acc) => sum + acc, 0) / noteAccuracies.length).toFixed(1)}%
-                  </Text>
-                  <Text style={styles.accuracyCardDescription}>Average per note</Text>
-                </View>
-              )}
-              
-              {/* Cycles Completed Card */}
-              <View style={styles.accuracyCard}>
-                <View style={styles.accuracyCardHeader}>
-                  <Ionicons name="refresh" size={20} color="#FF9800" />
-                  <Text style={styles.accuracyCardTitle}>Cycles</Text>
-                </View>
-                <Text style={styles.accuracyCardValue}>{cycle}</Text>
-                <Text style={styles.accuracyCardDescription}>Completed</Text>
-              </View>
-              
-              {/* Overall Accuracy Card - Only show when cycles completed > 0 */}
-              {cycle > 0 && (
-                <View style={[styles.accuracyCard, styles.overallAccuracyCard]}>
-                  <View style={styles.accuracyCardHeader}>
-                    <Ionicons name="trophy" size={20} color="#FFD700" />
-                    <Text style={styles.accuracyCardTitle}>Overall</Text>
-                  </View>
-                  {(() => {
-                    const accuracy = getOverallAccuracy()
-                    if (accuracy.cycleAccuracy !== null) {
-                      return (
-                        <>
-                          <Text style={styles.overallAccuracyValue}>
-                            {accuracy.cycleAccuracy.toFixed(1)}%
-                          </Text>
-                          <Text style={styles.accuracyCardDescription}>Cycle Average</Text>
-                        </>
-                      )
-                    } else if (accuracy.noteAccuracy !== null) {
-                      return (
-                        <>
-                          <Text style={styles.overallAccuracyValue}>
-                            {accuracy.noteAccuracy.toFixed(1)}%
-                          </Text>
-                          <Text style={styles.accuracyCardDescription}>Note Average</Text>
-                        </>
-                      )
-                    }
-                    return (
-                      <>
-                        <Text style={styles.overallAccuracyValue}>--</Text>
-                        <Text style={styles.accuracyCardDescription}>No Data</Text>
-                      </>
-                    )
-                  })()}
-                </View>
-              )}
-            </View>
-          </View>
-          
-          <View style={styles.enhancedButtonRow}>
-            <TouchableOpacity style={styles.enhancedActionButton} onPress={startGame}>
-              <View style={styles.actionButtonGlow} />
-              <View style={styles.actionButtonContent}>
-                <Ionicons name="refresh" size={24} color="#fff" />
-                <Text style={styles.enhancedActionButtonText}>PLAY AGAIN</Text>
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.enhancedActionButton, styles.menuActionButton]} onPress={resetGame}>
-              <View style={styles.actionButtonContent}>
-                <Ionicons name="home" size={24} color="#fff" />
-                <Text style={styles.enhancedActionButtonText}>MENU</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
+          // Submit score before starting new game
+          await submitGameScore()
+          // Start new game
+          startGame(difficulty, bpm)
+        }}
+        onBackToMenu={resetGame}
+        scoreLabel="Notes Completed"
+      />
     )
   }
   
