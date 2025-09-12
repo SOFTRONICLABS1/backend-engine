@@ -1,9 +1,9 @@
 // TuneTrackerGame.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { View, useWindowDimensions, Text, TouchableOpacity, StyleSheet } from "react-native"
-import { Canvas, Path, Skia, vec, Line, Fill } from "@shopify/react-native-skia"
+import { View, useWindowDimensions, Text, TouchableOpacity, StyleSheet, Animated } from "react-native"
+import { Canvas, Path, Skia, vec, Line, Fill, Rect, Circle, Group } from "@shopify/react-native-skia"
 import { Ionicons } from "@expo/vector-icons"
-import { useNavigation } from "@react-navigation/native"
+import { useNavigation, useRoute } from "@react-navigation/native"
 
 import { Audio } from "expo-av"
 import { encode as btoa } from "base-64"
@@ -16,6 +16,10 @@ import { GuitarHarmonics } from "@/utils/GuitarHarmonics"
 import { NOTE_FREQUENCIES } from "@/utils/noteParser"
 import DSPModule from "@/../specs/NativeDSPModule"
 import { handleGameExit } from "@/utils/gameNavigation"
+import { calculateNoteAccuracy, calculateOverallAccuracy } from "@/utils/pitchAccuracy"
+import { GameMenu, GameOverScreen, type Difficulty, type BPM, type GameStats } from '../shared/components'
+import GameState from "../../../services/GameState"
+import GameScore from "../../../services/GameScore"
 
 // ---------- constants ----------
 const PIXELS_PER_SECOND = 60
@@ -34,6 +38,35 @@ const THRESHOLD_DEFAULT = 0.15
 const THRESHOLD_NOISY = 0.6
 const RMS_GAP = 1.1
 const ENABLE_FILTER = true
+
+// Difficulty settings for frequency tolerance (for green color indication)
+const DIFFICULTY_TOLERANCE = {
+  easy: 10,    // ±10Hz tolerance for green color
+  medium: 7,   // ±7Hz tolerance for green color  
+  hard: 4      // ±4Hz tolerance for green color
+}
+
+// Enhanced tolerance states with colors
+const getToleranceState = (diff: number, tolerance: number) => {
+  if (diff <= tolerance) return 'perfect' // Within green tolerance
+  if (diff <= tolerance * 1.5) return 'close' // Close but not green
+  if (diff <= tolerance * 2.5) return 'fair' // Getting warmer
+  return 'poor' // Far off
+}
+
+const TOLERANCE_COLORS = {
+  perfect: { bg: 'rgba(34, 197, 94, 0.95)', border: '#22C55E', text: '#000', glow: '#22C55E' },
+  close: { bg: 'rgba(251, 191, 36, 0.9)', border: '#FBBF24', text: '#000', glow: '#FBBF24' },
+  fair: { bg: 'rgba(249, 115, 22, 0.9)', border: '#F97316', text: '#FFF', glow: '#F97316' },
+  poor: { bg: 'rgba(239, 68, 68, 0.9)', border: '#EF4444', text: '#FFF', glow: '#EF4444' }
+}
+
+// Difficulty settings for accuracy calculation (wider tolerance for accuracy scoring)
+const ACCURACY_TOLERANCE = {
+  easy: 20,    // ±20Hz for accuracy calculation
+  medium: 15,  // ±15Hz for accuracy calculation
+  hard: 8      // ±8Hz for accuracy calculation
+}
 
 const PIANO_NOTES = [
   "C6","B5","A#5","A5","G#5","G5","F#5","F5","E5","D#5","D5","C#5","C5",
@@ -101,9 +134,85 @@ function generateToneWavDataUri(frequency: number, durationMs: number, sampleRat
 }
 
 // ---------- component ----------
-export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
+interface TuneTrackerGameProps {
+  notes?: any;
+}
+
+export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
   const { width, height } = useWindowDimensions()
   const navigation = useNavigation()
+  const route = useRoute()
+  
+  // Get game params from route (contentId, gameId, payload)
+  const { contentId, gameId, payload } = route.params as any || {}
+  
+  // Use payload notes if available, otherwise use props
+  const gameNotes = payload?.notes || notes
+
+  // GameState management
+  const gameStateRef = useRef<GameState | null>(null)
+  
+  // Initialize GameState (without start time - that's set when game actually starts)
+  const initializeGameState = useCallback(() => {
+    const gameState = new GameState()
+    gameState.setGameId(gameId || 'tune-tracker-default')
+    gameState.setContentId(contentId || 'default-content')
+    gameState.setGameType('tune-tracker')
+    gameStateRef.current = gameState
+    
+    console.log('🎮 TuneTracker: GameState initialized', {
+      gameId: gameState.getGameId(),
+      contentId: gameState.getContentId()
+    })
+  }, [gameId, contentId])
+
+  // Submit game score
+  const submitGameScore = useCallback(async () => {
+    if (!gameStateRef.current) {
+      console.warn('🎮 TuneTracker: No GameState found, skipping score submission')
+      return
+    }
+
+    try {
+      // Update final game state (end time is set by caller before calling this)
+      const gameState = gameStateRef.current
+      gameState.setScore(score)
+      gameState.setNumberOfCycles(completedCycles)
+      gameState.setAccuracy(getOverallAccuracy() || 0)
+      gameState.setLevelConfig({
+        level: difficulty,
+        bpm: bpm
+      })
+
+      console.log('🎮 TuneTracker: Submitting score...', {
+        score,
+        accuracy: getOverallAccuracy(),
+        cycles: completedCycles,
+        difficulty,
+        bpm,
+        gameId: gameState.getGameId(),
+        contentId: gameState.getContentId(),
+        startTime: gameState.getStartTime(),
+        endTime: gameState.getEndTime(),
+        levelConfig: gameState.getLevelConfig()
+      })
+
+      // Create and submit GameScore
+      const gameScore = await GameScore.create(gameState)
+      const result = await gameScore.submitToAPI()
+      
+      if (result.success) {
+        console.log('✅ TuneTracker: Score submitted successfully')
+      } else {
+        console.error('❌ TuneTracker: Score submission failed:', result.error)
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ TuneTracker: Error submitting score:', error)
+      return { success: false, error: error.message }
+    }
+  }, [score, completedCycles, getOverallAccuracy, difficulty, bpm])
 
   // microphone access via game screen hook
   const gameScreenMicrophone = useGameScreenMicrophone()
@@ -127,9 +236,61 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
   const addId = useUiStore((s) => s.addId)
 
   // state
+  const [gameState, setGameState] = useState<'menu' | 'playing' | 'paused' | 'gameOver'>('menu')
   const [isRecording, setIsRecording] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
   const [pitch, setPitch] = useState(-1)
+  const [score, setScore] = useState(0)
+  const [completedCycles, setCompletedCycles] = useState(0)
+  const [noteAccuracies, setNoteAccuracies] = useState<number[]>([])
+  const [cycleAccuracies, setCycleAccuracies] = useState<number[]>([])
+  
+  // Note and cycle tracking
+  const [completedNotes, setCompletedNotes] = useState<Set<string>>(new Set())
+  const [currentNoteInTolerance, setCurrentNoteInTolerance] = useState<string | null>(null)
+  const toleranceStartTime = useRef<number | null>(null)
+  
+  // Visual feedback animations
+  const noteCompletionAnim = useRef(new Animated.Value(0)).current
+  const toleranceGlowAnim = useRef(new Animated.Value(0)).current
+  const [recentlyCompletedNote, setRecentlyCompletedNote] = useState<string | null>(null)
+  
+  // Progress circle state for current note being sung
+  const [currentNoteProgress, setCurrentNoteProgress] = useState<number>(0)
+  
+  // Falling sparkles when voice is in range
+  const [fallingSparkles, setFallingSparkles] = useState<{
+    id: string
+    x: number
+    y: number
+    opacity: Animated.Value
+    animatedY?: Animated.Value
+    color: string
+    size: number
+    createdAt: number
+  }[]>([])
+  
+
+  // Note completion based on note width/duration from payload
+  const getRequiredToleranceTime = useCallback((noteId: string): number => {
+    // Find the segment for this unique noteId to get its duration
+    const segment = targetSegments.find(seg => seg.noteId === noteId)
+    if (!segment || !segment.duration) return 500 // fallback
+    
+    // Require singing for a percentage of the note's duration
+    // For example: 60% of the note's duration
+    const completionPercentage = 0.6
+    return Math.max(200, segment.duration * completionPercentage) // minimum 200ms
+  }, [targetSegments])
+
+  
+  // Accuracy sampling for FlappyBird-style calculation
+  const accuracySamples = useRef<{frequency: number, timestamp: number}[]>([])
+  const currentNoteForAccuracy = useRef<string | null>(null)
+  
+  // Settings
+  const [difficulty, setDifficulty] = useState<Difficulty>('easy')
+  const [bpm, setBpm] = useState<BPM>(60)
 
   // viewport / plotting
   const [viewportCenterFreq, setViewportCenterFreq] = useState<number>(440)
@@ -165,12 +326,75 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
 
   // convert pitch name -> frequency
   const pitchToFrequency = useCallback((p: string) => NOTE_FREQUENCIES_MAP[p] || 440, [])
+  
+  // Create falling sparkles when voice is in range
+  const createFallingSparkle = useCallback(() => {
+    if (pitch <= 0) return // Only create sparkles when there's a valid pitch
+    
+    const sparkleId = `falling_${Date.now()}_${Math.random()}`
+    const centerX = graphWidth / 2 + pianoWidth // Account for piano width offset
+    const pitchY = freqToY(pitch) // Get Y position of current pitch
+    
+    // Start sparkles below the progress circle (radius is 20, so start 25px below)
+    const startX = centerX
+    const startY = pitchY + 25 // Start below the progress circle
+    
+    const sparkleOpacity = new Animated.Value(1)
+    const sparkleY = new Animated.Value(startY)
+    
+    setFallingSparkles(prev => [...prev.slice(-30), { // Keep max 30 sparkles
+      id: sparkleId,
+      x: startX,
+      y: startY,
+      opacity: sparkleOpacity,
+      animatedY: sparkleY,
+      color: '#FFD700', // Gold color
+      size: 12, // Fixed size for consistency
+      createdAt: Date.now()
+    }])
+    
+    // Animate sparkle falling down from below the progress circle
+    Animated.parallel([
+      Animated.timing(sparkleOpacity, {
+        toValue: 0,
+        duration: 1500, // 1.5 seconds to fall
+        useNativeDriver: false
+      }),
+      Animated.timing(sparkleY, {
+        toValue: graphHeight, // Fall to bottom of graph
+        duration: 1500,
+        useNativeDriver: false
+      })
+    ]).start(() => {
+      // Remove sparkle after animation
+      setFallingSparkles(prev => prev.filter(s => s.id !== sparkleId))
+    })
+  }, [graphWidth, graphHeight, pianoWidth, pitch, freqToY])
+  
+  // FlappyBird-style accuracy calculation functions
+  // Note: Using modular pitch accuracy utility instead of local calculation
+  
+  const calculateCycleAccuracy = useCallback((noteAccuraciesInCycle: number[]): number => {
+    if (noteAccuraciesInCycle.length === 0) return 0
+    /**
+     * PITCH ACCURACY PER CYCLE FORMULA (from FlappyBird):
+     * Accuracy for a cycle = (sum of all note accuracies in the cycle) / (number of notes in the cycle)
+     * 
+     * IMPORTANT: Only completed cycles are included. Incomplete cycles are excluded.
+     */
+    const sum = noteAccuraciesInCycle.reduce((acc, accuracy) => acc + accuracy, 0)
+    return sum / noteAccuraciesInCycle.length
+  }, [])
+  
+  const getOverallAccuracy = useCallback((): number | null => {
+    return calculateOverallAccuracy(noteAccuracies)
+  }, [noteAccuracies])
 
   // process notes payload
   const processNotesData = useCallback(() => {
-    if (!notes?.measures) return []
+    if (!gameNotes?.measures) return []
     const all: any[] = []
-    const sortedMeasures = [...notes.measures].sort((a: any, b: any) => a.measure_number - b.measure_number)
+    const sortedMeasures = [...gameNotes.measures].sort((a: any, b: any) => a.measure_number - b.measure_number)
     sortedMeasures.forEach((measure: any) => {
       const sortedNotes = [...measure.notes].sort((a: any, b: any) => a.beat - b.beat)
       sortedNotes.forEach((n: any) => {
@@ -185,7 +409,7 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
       })
     })
     return all
-  }, [notes, pitchToFrequency])
+  }, [gameNotes, pitchToFrequency])
 
   // freq -> Y
   const freqToY = useCallback((freq: number) => {
@@ -352,10 +576,11 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
     } catch (e) { console.warn('Harmonic playback failed', e) }
   }, [playDataUriWithExpo])
 
-  // center-line checker for segments — play harmonic if center lies inside a segment
+  // center-line checker for segments — play harmonic if center lies inside a segment (score now tracked separately)
   useEffect(() => {
     if (!isRecording || isPaused || !targetSegments.length) return
     let rafId = 0
+    
     const loop = () => {
       const now = Date.now()
       const centerX = graphWidth / 2
@@ -387,7 +612,7 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
 
   // viewport animation RAF
   const animate = useCallback(() => {
-    if (isRecording && !isPaused) {
+    if (isRecording && !isPaused && gameState === 'playing') {
       setViewportCenterFreq(current => {
         const diff = targetCenterFreq - current
         if (Math.abs(diff) < 0.1) return targetCenterFreq
@@ -396,22 +621,22 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
       setRenderTrigger(r => r + 1)
       animationFrameRef.current = requestAnimationFrame(animate)
     }
-  }, [isRecording, isPaused, targetCenterFreq])
+  }, [isRecording, isPaused, targetCenterFreq, gameState])
 
   useEffect(() => {
-    if (isRecording && !isPaused) {
+    if (isRecording && !isPaused && gameState === 'playing') {
       startTimeRef.current = Date.now()
       animationFrameRef.current = requestAnimationFrame(animate)
     } else {
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
     }
     return () => { if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current) }
-  }, [isRecording, isPaused, animate])
+  }, [isRecording, isPaused, animate, gameState])
 
 
   // Process audio buffer with DSP module for pitch detection with noise reduction
   useEffect(() => {
-    if (!audioBuffer || audioBuffer.length === 0 || !sampleRate || !isRecording || isPaused || !isActive) return;
+    if (!audioBuffer || audioBuffer.length === 0 || !sampleRate || !isRecording || isPaused || !isActive || gameState !== 'playing') return;
     
     // Process each bufferId only once
     if (bufferId === idQ[idQ.length - 1]) return;
@@ -458,13 +683,13 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
     }).catch(error => {
       console.error('DSP RMS calculation error:', error);
     });
-  }, [audioBuffer, sampleRate, bufferId, isRecording, isPaused, isActive, idQ, pitchQ, rmsQ, addRMS, addPitch])
+  }, [audioBuffer, sampleRate, bufferId, isRecording, isPaused, isActive, idQ, pitchQ, rmsQ, addRMS, addPitch, gameState])
 
   // pitch plotting: ensure points are added as before (timestamp + frequency)
   // Color calculation is now inlined to prevent dependency issues
 
   useEffect(() => {
-    if (!isRecording || isPaused || !isActive) return
+    if (!isRecording || isPaused || !isActive || gameState !== 'playing') return
     if (bufferId === idQ[idQ.length - 1]) return
 
     try {
@@ -509,8 +734,227 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
       console.error('Error in pitch plotting:', error)
       // Continue gracefully - don't break the plotting
     }
-  }, [pitch, bufferId, isRecording, isPaused, isActive, addId, idQ]) 
+  }, [pitch, bufferId, isRecording, isPaused, isActive, addId, idQ, gameState]) 
   // Note: Intentionally not including checkViewportBounds, getCurrentTargetFrequency to prevent plotting breaks during color changes
+
+  // FlappyBird-style accuracy tracking: collect samples while singing
+  useEffect(() => {
+    if (!isRecording || isPaused || gameState !== 'playing' || pitch <= 0) {
+      return
+    }
+
+    const targetInfo = getCurrentTargetInfo()
+    if (!targetInfo) {
+      return
+    }
+
+    const noteId = targetInfo.noteId  // Use unique noteId for accuracy tracking
+    const currentTime = Date.now()
+    const diff = Math.abs(pitch - targetInfo.frequency)
+    const accuracyTolerance = ACCURACY_TOLERANCE[difficulty]
+    
+    // Collect accuracy samples when user is within the accuracy tolerance range
+    if (diff <= accuracyTolerance) {
+      // Start tracking this note if it's new
+      if (currentNoteForAccuracy.current !== noteId) {
+        currentNoteForAccuracy.current = noteId
+        accuracySamples.current = []
+      }
+      
+      // Add sample to accuracy calculation
+      accuracySamples.current.push({ frequency: pitch, timestamp: currentTime })
+      
+      // Keep only recent samples (last 2 seconds)
+      const twoSecondsAgo = currentTime - 2000
+      accuracySamples.current = accuracySamples.current.filter(sample => sample.timestamp > twoSecondsAgo)
+    }
+    
+  }, [pitch, difficulty, isRecording, isPaused, gameState, getCurrentTargetInfo])
+
+  // Note completion and cycle tracking (for green color indication)
+  useEffect(() => {
+    if (!isRecording || isPaused || gameState !== 'playing' || pitch <= 0) {
+      // Reset tolerance tracking when not actively playing
+      setCurrentNoteInTolerance(null)
+      toleranceStartTime.current = null
+      return
+    }
+
+    const targetInfo = getCurrentTargetInfo()
+    if (!targetInfo) {
+      setCurrentNoteInTolerance(null)
+      toleranceStartTime.current = null
+      return
+    }
+
+    const diff = Math.abs(pitch - targetInfo.frequency)
+    const greenTolerance = DIFFICULTY_TOLERANCE[difficulty] // For green color indication
+    const isInTolerance = diff <= greenTolerance
+    const noteId = targetInfo.noteId  // Use unique noteId instead of just note name
+    const currentTime = Date.now()
+
+    if (isInTolerance) {
+      // User is singing within green tolerance
+      if (currentNoteInTolerance !== noteId) {
+        // Started singing a new note in tolerance
+        setCurrentNoteInTolerance(noteId)
+        toleranceStartTime.current = currentTime
+        
+        // Start tolerance glow animation
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(toleranceGlowAnim, {
+              toValue: 1,
+              duration: 800,
+              useNativeDriver: false
+            }),
+            Animated.timing(toleranceGlowAnim, {
+              toValue: 0.3,
+              duration: 800,
+              useNativeDriver: false
+            })
+          ])
+        ).start()
+      } 
+      
+      // Calculate progress for the current note being sung (based on how much width has been traversed)
+      const currentSegment = targetSegments.find(seg => seg.noteId === noteId)
+      if (currentSegment) {
+        const now = Date.now()
+        const centerX = graphWidth / 2
+        const startX = graphWidth + ((currentSegment.startMs - now) * PIXELS_PER_MS)
+        const endX = graphWidth + ((currentSegment.endMs - now) * PIXELS_PER_MS)
+        const leftEdge = Math.min(startX, endX)
+        const rightEdge = Math.max(startX, endX)
+        const noteWidth = rightEdge - leftEdge
+        
+        let noteProgress = 0
+        
+        // Calculate progress based on how much of the note width has passed the center line
+        if (centerX <= leftEdge) {
+          // Center line hasn't reached the note yet
+          noteProgress = 0
+        } else if (centerX >= rightEdge) {
+          // Center line has completely passed the note
+          noteProgress = 100
+        } else {
+          // Center line is somewhere within the note
+          const traversedWidth = centerX - leftEdge
+          noteProgress = Math.min(100, Math.max(0, (traversedWidth / noteWidth) * 100))
+        }
+        
+        // Update the current note progress for the circle display
+        setCurrentNoteProgress(noteProgress)
+      }
+      
+      // Create falling sparkles when voice is in tolerance range
+      if (Math.abs(pitch - targetInfo.frequency) <= greenTolerance && Math.random() < 0.7) {
+        // Create multiple sparkles for a more dramatic effect
+        createFallingSparkle()
+        if (Math.random() < 0.4) {
+          setTimeout(() => createFallingSparkle(), 50) // Slight delay for second sparkle
+        }
+        if (Math.random() < 0.2) {
+          setTimeout(() => createFallingSparkle(), 100) // Slight delay for third sparkle
+        }
+      }
+      
+      if (currentNoteInTolerance === noteId) {
+        // Continue singing the same note in tolerance
+        const timeInTolerance = currentTime - (toleranceStartTime.current || currentTime)
+        
+        // Check if note has been completed (sung for required percentage of note duration)
+        const requiredTime = getRequiredToleranceTime(noteId)
+        if (timeInTolerance >= requiredTime && !completedNotes.has(noteId)) {
+          // Mark note as completed
+          setCompletedNotes(prev => new Set([...prev, noteId]))
+          
+          // Trigger completion animation
+          setRecentlyCompletedNote(noteId)
+          Animated.sequence([
+            Animated.timing(noteCompletionAnim, {
+              toValue: 1,
+              duration: 300,
+              useNativeDriver: false
+            }),
+            Animated.timing(noteCompletionAnim, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: false
+            })
+          ]).start(() => {
+            setRecentlyCompletedNote(null)
+          })
+          
+          // Note completed successfully - progress will be shown in the circle
+          
+          // Calculate accuracy using FlappyBird method with collected samples
+          let accuracy = 0
+          if (accuracySamples.current.length > 0) {
+            // Calculate average sung frequency from samples
+            const avgSungFreq = accuracySamples.current.reduce((sum, sample) => sum + sample.frequency, 0) / accuracySamples.current.length
+            accuracy = calculateNoteAccuracy({ targetFrequency: targetInfo.frequency, sungFrequency: avgSungFreq })
+          } else {
+            // Fallback: use current pitch for accuracy calculation
+            accuracy = calculateNoteAccuracy({ targetFrequency: targetInfo.frequency, sungFrequency: pitch })
+          }
+          
+          setNoteAccuracies(prev => [...prev, accuracy])
+          
+          // Update score (number of completed notes)
+          setScore(prev => prev + 1)
+          
+          console.log(`✅ Note completed: ${noteId} (${diff.toFixed(1)}Hz off, ${accuracy.toFixed(1)}% accuracy, ${requiredTime}ms required, ${timeInTolerance}ms sung)`)
+          
+          // Clear samples for this note
+          if (currentNoteForAccuracy.current === noteId) {
+            accuracySamples.current = []
+            currentNoteForAccuracy.current = null
+          }
+        }
+      }
+    } else {
+      // User is not in green tolerance, reset tracking
+      if (currentNoteInTolerance === noteId) {
+        setCurrentNoteInTolerance(null)
+        toleranceStartTime.current = null
+        setCurrentNoteProgress(0) // Reset progress when out of tolerance
+        
+        // Stop tolerance glow animation
+        toleranceGlowAnim.stopAnimation()
+        toleranceGlowAnim.setValue(0)
+      }
+    }
+    
+    // Check for completed cycles using FlappyBird logic
+    const processedNotes = processNotesData()
+    if (processedNotes.length > 0 && noteAccuracies.length >= processedNotes.length) {
+      const completedCyclesCount = Math.floor(noteAccuracies.length / processedNotes.length)
+      
+      if (completedCyclesCount > completedCycles && completedCyclesCount > 0) {
+        // New cycle completed
+        setCompletedCycles(completedCyclesCount)
+        
+        // Calculate cycle accuracy from the most recent completed cycle's notes
+        const cycleStartIndex = (completedCyclesCount - 1) * processedNotes.length
+        const cycleEndIndex = completedCyclesCount * processedNotes.length
+        const cycleNoteAccuracies = noteAccuracies.slice(cycleStartIndex, cycleEndIndex)
+        
+        console.log(`🎯 Checking cycle ${completedCyclesCount}: Start=${cycleStartIndex}, End=${cycleEndIndex}, Notes needed=${processedNotes.length}, Notes available=${cycleNoteAccuracies.length}`)
+        
+        if (cycleNoteAccuracies.length === processedNotes.length) {
+          const cycleAccuracy = calculateCycleAccuracy(cycleNoteAccuracies)
+          setCycleAccuracies(prev => [...prev, cycleAccuracy])
+          
+          console.log(`🎯 Cycle ${completedCyclesCount} completed! Accuracy: ${cycleAccuracy.toFixed(1)}%`)
+          console.log(`🎯 Individual note accuracies for cycle: ${cycleNoteAccuracies.map(a => a.toFixed(1)).join(', ')}`)
+        } else {
+          console.log(`🎯 Not enough note accuracies for cycle ${completedCyclesCount}: needed ${processedNotes.length}, got ${cycleNoteAccuracies.length}`)
+        }
+      }
+    }
+    
+  }, [pitch, difficulty, isRecording, isPaused, gameState, currentNoteInTolerance, completedNotes, completedCycles, noteAccuracies, score, getCurrentTargetInfo, processNotesData, calculateNoteAccuracy, calculateCycleAccuracy])
 
   // viewport helpers
   const checkViewportBounds = (p:number) => {
@@ -543,7 +987,7 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
       const endX = graphWidth + ((s.endMs - now) * PIXELS_PER_MS)
       const minX = Math.min(startX, endX), maxX = Math.max(startX, endX)
       if (centerX >= minX - eps && centerX <= maxX + eps) {
-        return { frequency: s.frequency, note: s.pitch }
+        return { frequency: s.frequency, note: s.pitch, noteId: s.noteId, segment: s }
       }
     }
     return null
@@ -577,18 +1021,22 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
       }
     }
 
-    // Determine pitch line color based on proximity to target
+    // Determine pitch line color based on difficulty-specific tolerance
     const targetInfo = getCurrentTargetInfo()
     let pitchLineColor = '#FFFFFF' // default white (no voice or no target)
+    let isInTolerance = false
     
     if (targetInfo && pitch > 0) {
       const diff = Math.abs(pitch - targetInfo.frequency)
-      if (diff <= 3) {
-        pitchLineColor = '#00FF00' // green: within ±3Hz
-      } else if (diff <= 6) {
-        pitchLineColor = '#FFFF00' // yellow: within ±6Hz
+      const tolerance = DIFFICULTY_TOLERANCE[difficulty]
+      
+      if (diff <= tolerance) {
+        pitchLineColor = '#00FF00' // green: within difficulty tolerance
+        isInTolerance = true
+      } else if (diff <= tolerance * 2) {
+        pitchLineColor = '#FFFF00' // yellow: within 2x tolerance
       } else {
-        pitchLineColor = '#FF0000' // red: more than ±6Hz
+        pitchLineColor = '#FF0000' // red: outside tolerance
       }
     }
 
@@ -629,6 +1077,66 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
         {/* center vertical */}
         <Line p1={vec(halfWidth, 0)} p2={vec(halfWidth, graphHeight)} color="#ffffff" strokeWidth={2} />
 
+        {/* Progress circle behind the pitch point when singing */}
+        {pitch > 0 && targetInfo && currentNoteProgress > 0 && (() => {
+          const centerX = halfWidth
+          const centerY = freqToY(pitch)
+          const radius = 20
+          
+          // Determine color based on progress percentage
+          const getProgressColor = (progress: number) => {
+            if (progress < 30) return "rgba(255, 107, 107, 0.7)" // Red
+            if (progress < 60) return "rgba(255, 255, 0, 0.7)" // Yellow
+            if (progress < 90) return "rgba(255, 165, 0, 0.7)" // Orange
+            return "rgba(0, 255, 0, 0.7)" // Green
+          }
+          
+          const progressColor = getProgressColor(currentNoteProgress)
+          
+          // Create pie chart path for progress (clockwise from top)
+          const createPiePath = () => {
+            const path = Skia.Path.Make()
+            const startAngle = -Math.PI / 2 // Start from top (-90 degrees)
+            // For clockwise rotation, we add the progress angle directly
+            const sweepAngle = (currentNoteProgress / 100) * 2 * Math.PI
+            
+            if (currentNoteProgress >= 100) {
+              // Full circle
+              path.addCircle(centerX, centerY, radius)
+            } else if (currentNoteProgress > 0) {
+              // Create pie slice (clockwise from top)
+              path.moveTo(centerX, centerY) // Center point
+              path.lineTo(centerX, centerY - radius) // Start at top
+              
+              // Create points along the arc (clockwise)
+              const steps = Math.max(8, Math.floor(currentNoteProgress / 2)) // More steps for smoother arc
+              for (let i = 1; i <= steps; i++) {
+                const angle = startAngle + (i / steps) * sweepAngle
+                const x = centerX + radius * Math.cos(angle)
+                const y = centerY + radius * Math.sin(angle)
+                path.lineTo(x, y)
+              }
+              
+              path.lineTo(centerX, centerY) // Back to center
+            }
+            path.close()
+            return path
+          }
+          
+          const piePath = createPiePath()
+          
+          return (
+            <Group>
+              {/* Background circle */}
+              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.1)" />
+              {/* Progress pie */}
+              <Path path={piePath} color={progressColor} style="fill" />
+              {/* Border circle */}
+              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.3)" style="stroke" strokeWidth={1} />
+            </Group>
+          )
+        })()}
+
         {/* pitch line with proximity-based coloring */}
         {pitchPath && <Path path={pitchPath} color={pitchLineColor} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" />}
 
@@ -660,7 +1168,7 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
         })()}
       </Canvas>
     )
-  }, [graphWidth, graphHeight, pitchPoints, targetSegments, viewportCenterFreq, renderTrigger, pitch, getCurrentTargetInfo])
+  }, [graphWidth, graphHeight, pitchPoints, targetSegments, viewportCenterFreq, renderTrigger, pitch, getCurrentTargetInfo, difficulty, completedNotes, currentNoteProgress, freqToY])
 
   // piano keys - left side with inline target highlight (orange)
   const pianoKeys = useMemo(() => {
@@ -705,21 +1213,101 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
     )
   }, [activeNoteIndex, isRecording, isPaused, freqToY, graphHeight, viewportCenterFreq, processNotesData])
 
-  // play/stop toggle
+  // Start game from menu with settings (or restart with current settings)
+  const startGame = useCallback((selectedDifficulty?: Difficulty, selectedBpm?: BPM) => {
+    if (selectedDifficulty) setDifficulty(selectedDifficulty)
+    if (selectedBpm) setBpm(selectedBpm)
+    
+    // Initialize GameState for new game session
+    initializeGameState()
+    
+    // Set start time when user actually starts playing
+    if (gameStateRef.current) {
+      gameStateRef.current.setStartTime(new Date().toISOString())
+      console.log('🎮 TuneTracker: Game started at', gameStateRef.current.getStartTime())
+    }
+    
+    setGameState('playing')
+    setIsRecording(true)
+    setIsPaused(false)
+    setPitchPoints([])
+    setScore(0)
+    setCompletedCycles(0)
+    setNoteAccuracies([])
+    setCycleAccuracies([])
+    setCompletedNotes(new Set())
+    setCurrentNoteInTolerance(null)
+    setCurrentNoteProgress(0)
+    setFallingSparkles([])
+    toleranceStartTime.current = null
+    accuracySamples.current = []
+    currentNoteForAccuracy.current = null
+    startTimeRef.current = Date.now()
+    const opt = calculateViewportCenter()
+    setViewportCenterFreq(opt)
+    setTargetCenterFreq(opt)
+    pitchStabilityBuffer.current = []
+    harmonicsSetRef.current.clear()
+  }, [calculateViewportCenter, initializeGameState])
+  
+  // End game
+  const endGame = useCallback(() => {
+    setGameState('gameOver')
+    setIsRecording(false)
+    setIsPaused(false)
+    setTargetSegments([])
+    appendControllerRef.current.running = false
+    appendControllerRef.current.nextStartMs = null
+    harmonicsSetRef.current.clear()
+  }, [])
+  
+  // Reset to menu
+  const resetGame = useCallback(async () => {
+    // Set end time when user clicks menu button
+    if (gameStateRef.current) {
+      gameStateRef.current.setEndTime(new Date().toISOString())
+      console.log('🎮 TuneTracker: Game ended (menu clicked) at', gameStateRef.current.getEndTime())
+    }
+    
+    // Submit score before resetting
+    await submitGameScore()
+    
+    setGameState('menu')
+    setIsRecording(false)
+    setIsPaused(false)
+    setPitchPoints([])
+    setActiveNoteIndex(-1)
+    setTargetSegments([])
+    setScore(0)
+    setCompletedCycles(0)
+    setNoteAccuracies([])
+    setCycleAccuracies([])
+    setCompletedNotes(new Set())
+    setCurrentNoteInTolerance(null)
+    setCurrentNoteProgress(0)
+    setFallingSparkles([])
+    toleranceStartTime.current = null
+    accuracySamples.current = []
+    currentNoteForAccuracy.current = null
+    appendControllerRef.current.running = false
+    appendControllerRef.current.nextStartMs = null
+    harmonicsSetRef.current.clear()
+    const opt = calculateViewportCenter()
+    setViewportCenterFreq(opt)
+    setTargetCenterFreq(opt)
+    pitchStabilityBuffer.current = []
+    
+    // Clear GameState
+    gameStateRef.current = null
+  }, [calculateViewportCenter, submitGameScore])
+  
+  // play/stop toggle during game
   const handlePlayStopToggle = useCallback(() => {
+    if (gameState !== 'playing') return
+    
     if (isRecording) {
-      setIsRecording(false)
-      setIsPaused(false)
-      setPitchPoints([])
-      setActiveNoteIndex(-1)
-      setTargetSegments([])
-      appendControllerRef.current.running = false
-      appendControllerRef.current.nextStartMs = null
-      harmonicsSetRef.current.clear()
-      const opt = calculateViewportCenter()
-      setViewportCenterFreq(opt)
-      setTargetCenterFreq(opt)
-      pitchStabilityBuffer.current = []
+      // Stop and go to game over
+      endGame()
     } else {
       setIsRecording(true)
       setIsPaused(false)
@@ -731,10 +1319,55 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
       pitchStabilityBuffer.current = []
       harmonicsSetRef.current.clear()
     }
-  }, [isRecording, calculateViewportCenter])
+  }, [gameState, isRecording, calculateViewportCenter, endGame])
 
   if (micAccess === "denied") return <RequireMicAccess />
   if (micAccess === "pending" || micAccess === "requesting") return null
+
+  // Render menu using shared component
+  if (gameState === 'menu') {
+    return (
+      <GameMenu
+        gameName="Tune Tracker"
+        onStartGame={startGame}
+        micAccess={micAccess}
+        isActive={isActive}
+        showDifficulty={true}
+        showBPM={true}
+      />
+    )
+  }
+  
+  // Render game over screen using shared component
+  if (gameState === 'gameOver') {
+    const stats: GameStats = {
+      score,
+      noteAccuracies,
+      cycleAccuracies,
+      completedCycles
+    }
+    
+    return (
+      <GameOverScreen
+        gameName="Tune Tracker"
+        stats={stats}
+        onPlayAgain={async () => {
+          // Set end time when user clicks play again button
+          if (gameStateRef.current) {
+            gameStateRef.current.setEndTime(new Date().toISOString())
+            console.log('🎮 TuneTracker: Game ended (play again clicked) at', gameStateRef.current.getEndTime())
+          }
+          
+          // Submit score before starting new game
+          await submitGameScore()
+          // Start new game
+          startGame(difficulty, bpm)
+        }}
+        onBackToMenu={resetGame}
+        scoreLabel="Notes Completed"
+      />
+    )
+  }
 
   return (
     <View style={styles.container}>
@@ -754,14 +1387,29 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
         <View style={styles.graphContainer}>
           {renderGraph}
 
-          {/* Current pitch display */}
-          {pitch > 0 && isRecording && !isPaused && (
-            <View style={styles.hzDisplayTopRight}>
-              <Text style={styles.hzTextTopRight}>{pitch.toFixed(1)} Hz</Text>
-            </View>
+          {/* Game stats display */}
+          {isRecording && !isPaused && (
+            <>
+              {/* Current pitch display */}
+              {pitch > 0 && (
+                <View style={styles.hzDisplayTopRight}>
+                  <Text style={styles.hzTextTopRight}>{pitch.toFixed(1)} Hz</Text>
+                </View>
+              )}
+              
+              {/* Score and progress display */}
+              <View style={styles.gameStatsDisplay}>
+                <Text style={styles.gameStatsText}>
+                  Notes: {score} | Cycles: {completedCycles}
+                </Text>
+                <Text style={styles.gameStatsSubtext}>
+                  Difficulty: {difficulty.charAt(0).toUpperCase() + difficulty.slice(1)} (±{DIFFICULTY_TOLERANCE[difficulty]}Hz)
+                </Text>
+              </View>
+            </>
           )}
 
-          {/* Target note display */}
+          {/* Target note display with tolerance status */}
           {isRecording && !isPaused && (() => {
             const targetInfo = getCurrentTargetInfo()
             if (!targetInfo && pitch > 0) {
@@ -782,15 +1430,28 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
               }
             }
             if (targetInfo) {
+              // Simple target display
+              const diff = pitch > 0 ? Math.abs(pitch - targetInfo.frequency) : Infinity
+              const tolerance = DIFFICULTY_TOLERANCE[difficulty]
+              const isInTolerance = diff <= tolerance
+              
               return (
-                <View style={styles.targetNoteDisplay}>
-                  <Text style={styles.targetNoteText}>Target: {targetInfo.note}</Text>
-                  <Text style={styles.targetFreqText}>{targetInfo.frequency.toFixed(1)} Hz</Text>
+                <View style={[
+                  styles.targetNoteDisplay, 
+                  isInTolerance ? { backgroundColor: 'rgba(0,255,0,0.9)', borderColor: '#00FF00' } : {}
+                ]}>
+                  <Text style={[styles.targetNoteText, isInTolerance ? { color: '#000' } : {}]}>
+                    Target: {targetInfo.note}
+                  </Text>
+                  <Text style={[styles.targetFreqText, isInTolerance ? { color: '#000' } : {}]}>
+                    {targetInfo.frequency.toFixed(1)} Hz (±{tolerance}Hz)
+                  </Text>
                   {pitch > 0 && (
                     <>
                       <View style={styles.frequencyDivider} />
-                      <Text style={styles.currentFreqLabel}>Current:</Text>
-                      <Text style={styles.currentFreqText}>{pitch.toFixed(1)} Hz</Text>
+                      <Text style={[styles.currentFreqLabel, isInTolerance ? { color: '#000' } : {}]}>
+                        Current: {pitch.toFixed(1)} Hz ({diff.toFixed(1)}Hz off)
+                      </Text>
                     </>
                   )}
                 </View>
@@ -798,22 +1459,51 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
             }
             return null
           })()}
+          
         </View>
       </View>
 
-      {/* Play/Stop */}
-      <TouchableOpacity style={styles.mainControlButton} onPress={handlePlayStopToggle}>
-        <Ionicons name={isRecording ? "stop" : "play"} size={32} color="#fff" />
-      </TouchableOpacity>
+
+      {/* Falling sparkles when voice is in range */}
+      {fallingSparkles.map(sparkle => (
+        <Animated.View
+          key={sparkle.id}
+          style={{
+            position: 'absolute',
+            left: sparkle.x - sparkle.size / 2,
+            top: sparkle.animatedY || sparkle.y, // Use animated Y position
+            opacity: sparkle.opacity,
+            zIndex: 20,
+            pointerEvents: 'none'
+          }}
+        >
+          <Text style={{
+            color: sparkle.color,
+            fontSize: sparkle.size,
+            textShadowColor: sparkle.color + '80',
+            textShadowOffset: { width: 0, height: 2 },
+            textShadowRadius: 4
+          }}>
+            ✨
+          </Text>
+        </Animated.View>
+      ))}
+
+      {/* Play/Stop - only show during game */}
+      {gameState === 'playing' && (
+        <TouchableOpacity style={styles.mainControlButton} onPress={handlePlayStopToggle}>
+          <Ionicons name={isRecording ? "stop" : "play"} size={32} color="#fff" />
+        </TouchableOpacity>
+      )}
     </View>
   )
 }
 
-// styles (unchanged)
+// styles - matching FlappyBird design
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0a0a0a' },
   topBar: { height: 40, backgroundColor: '#1a1a1a', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 5, borderBottomWidth: 1, borderBottomColor: '#2a2a2a' },
-  backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
+  backButton: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)', borderRadius: 20, position: 'absolute', top: 60, left: 20, zIndex: 100 },
   screenTitle: { color: '#fff', fontSize: 20, fontWeight: '600' },
   mainContent: { flex: 1, flexDirection: 'row' },
   pianoContainer: { width: 80, backgroundColor: '#f8f9fa', borderRightWidth: 1, borderRightColor: '#e9ecef', position: 'relative', paddingVertical: 8, paddingHorizontal: 6 },
@@ -829,12 +1519,319 @@ const styles = StyleSheet.create({
   mainControlButton: { position: 'absolute', bottom: 20, right: 20, width: 60, height: 60, borderRadius: 30, backgroundColor: '#007bff', justifyContent: 'center', alignItems: 'center', zIndex: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5 },
   hzDisplayTopRight: { position: 'absolute', top: 16, right: 16, backgroundColor: 'rgba(44, 62, 80, 0.9)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#34495e', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5, zIndex: 10 },
   hzTextTopRight: { color: '#ecf0f1', fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  gameStatsDisplay: { 
+    position: 'absolute', 
+    top: 16, 
+    left: 16, 
+    backgroundColor: 'rgba(16, 24, 40, 0.95)', 
+    paddingHorizontal: 16, 
+    paddingVertical: 12, 
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+    zIndex: 10
+  },
+  gameStatsText: { color: '#ecf0f1', fontSize: 14, fontWeight: '700', textAlign: 'center' },
+  gameStatsSubtext: { color: '#bdc3c7', fontSize: 10, fontWeight: '500', textAlign: 'center', marginTop: 2 },
   targetNoteDisplay: { position: 'absolute', top: 70, right: 16, backgroundColor: 'rgba(255, 215, 0, 0.9)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: '#FFD700', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 5, zIndex: 10, minWidth: 100 },
   targetNoteText: { color: '#1a1a1a', fontSize: 14, fontWeight: '700', textAlign: 'center', marginBottom: 2 },
   targetFreqText: { color: '#2c3e50', fontSize: 12, fontWeight: '600', textAlign: 'center' },
   frequencyDivider: { height: 1, backgroundColor: 'rgba(26, 26, 26, 0.3)', marginVertical: 6, marginHorizontal: 4 },
   currentFreqLabel: { color: '#1a1a1a', fontSize: 12, fontWeight: '600', textAlign: 'center', marginBottom: 2 },
   currentFreqText: { color: '#2c3e50', fontSize: 12, fontWeight: '600', textAlign: 'center' },
+  
+  // Tolerance progress indicator styles
+  toleranceProgressContainer: { 
+    marginTop: 8, 
+    height: 20, 
+    backgroundColor: 'rgba(0,0,0,0.2)', 
+    borderRadius: 10, 
+    overflow: 'hidden',
+    position: 'relative'
+  },
+  toleranceProgressBar: { 
+    height: '100%', 
+    backgroundColor: '#00FF00',
+    borderRadius: 10
+  },
+  toleranceProgressText: { 
+    position: 'absolute', 
+    top: 0, 
+    left: 0, 
+    right: 0, 
+    bottom: 0, 
+    textAlign: 'center', 
+    lineHeight: 20, 
+    fontSize: 10, 
+    fontWeight: 'bold', 
+    color: '#000'
+  },
+  
+  // Enhanced Visual Feedback Styles
+  enhancedTargetDisplay: {
+    position: 'absolute',
+    bottom: 150,
+    left: 20,
+    right: 20,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 3,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 20,
+    elevation: 12,
+    minHeight: 140
+  },
+  
+  completionBadge: {
+    position: 'absolute',
+    top: -10,
+    right: -10,
+    backgroundColor: '#FFD700',
+    borderRadius: 20,
+    width: 36,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFF',
+    shadowColor: '#FFD700',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.6,
+    shadowRadius: 8,
+    elevation: 6
+  },
+  
+  completionIcon: {
+    fontSize: 18,
+    color: '#FFF'
+  },
+  
+  targetNoteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8
+  },
+  
+  enhancedTargetNoteText: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    letterSpacing: 0.5
+  },
+  
+  toleranceStateText: {
+    fontSize: 12,
+    fontWeight: '700',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 6
+  },
+  
+  enhancedTargetFreqText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 12,
+    opacity: 0.9
+  },
+  
+  enhancedFrequencyDivider: {
+    height: 2,
+    backgroundColor: 'transparent',
+    borderTopWidth: 1,
+    borderStyle: 'dashed',
+    marginVertical: 8
+  },
+  
+  enhancedCurrentFreqLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4
+  },
+  
+  frequencyDifferenceText: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 12,
+    opacity: 0.8
+  },
+  
+  enhancedProgressContainer: {
+    marginTop: 8,
+    marginBottom: 8
+  },
+  
+  progressTrack: {
+    height: 8,
+    backgroundColor: 'rgba(255,255,255,0.3)',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 6
+  },
+  
+  enhancedProgressBar: {
+    height: '100%',
+    borderRadius: 4,
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4
+  },
+  
+  enhancedProgressText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    letterSpacing: 0.5
+  },
+  
+  toleranceGuide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    gap: 6
+  },
+  
+  toleranceIndicator: {
+    width: 20,
+    height: 6,
+    borderRadius: 3
+  },
+  
+  perfectZone: {
+    backgroundColor: '#22C55E',
+    shadowColor: '#22C55E',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4
+  },
+  
+  toleranceGuideText: {
+    fontSize: 11,
+    fontWeight: '600',
+    opacity: 0.8
+  },
+  
+  // Particle Effects
+  particleEffect: {
+    position: 'absolute',
+    zIndex: 1000
+  },
+  
+  particleText: {
+    fontSize: 24,
+    color: '#FFD700',
+    textShadowColor: 'rgba(255, 215, 0, 0.8)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4
+  },
+  
+  // Frequency Sparkles
+  frequencySparkle: {
+    position: 'absolute',
+    zIndex: 999
+  },
+  
+  sparkleText: {
+    fontSize: 16,
+    color: '#FFD700',
+    textShadowColor: 'rgba(255, 215, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3
+  },
+  
+  enhancedSparkleText: {
+    fontWeight: 'bold',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 8,
+    shadowOpacity: 0.8
+  },
+
+  // Progress Sparkles
+  progressSparkle: {
+    position: 'absolute',
+    zIndex: 998,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+
+  progressSparkleText: {
+    fontWeight: 'bold',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 6,
+    shadowOpacity: 0.9
+  },
+  
+  // Bottom Progress Bar
+  bottomProgressContainer: {
+    position: 'absolute',
+    bottom: 20,
+    left: '25%',
+    right: '25%',
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 2,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6
+  },
+  
+  progressBarTrack: {
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 6
+  },
+  
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+    shadowColor: '#3B82F6',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4
+  },
+  
+  progressText: {
+    color: '#FFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.3
+  },
+  
+  noteProgressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6
+  },
+  
+  noteProgressTitle: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: 'bold',
+    letterSpacing: 0.3
+  },
+  
+  noteProgressStatus: {
+    color: '#22C55E',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.2
+  }
 })
 
 export default TuneTrackerGame
