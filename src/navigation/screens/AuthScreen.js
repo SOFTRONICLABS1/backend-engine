@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, CommonActions } from '@react-navigation/native';
 import { SignInForm } from '../../components/auth/SignInForm';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -19,9 +19,14 @@ export default function AuthScreen() {
       const hasUsername = user && user.username && user.username !== null && user.username !== 'null';
       
       if (isNewUser === false && hasUsername) {
-        // Existing user with complete profile - go to main music app
+        // Existing user with complete profile - reset navigation to main app
         console.log('✅ User authenticated with complete profile - navigating to Tabs');
-        navigation.navigate('Tabs');
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: 'Tabs' }],
+          })
+        );
         return;
       } else {
         // New user or user without username - go to Welcome page

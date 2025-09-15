@@ -14,6 +14,7 @@ import {
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { CommonActions } from '@react-navigation/native';
 
 const countries = [
   { name: 'United States', code: 'US', dialCode: '+1', flag: '🇺🇸' },
@@ -90,8 +91,13 @@ export default function PhoneVerificationScreen({ navigation, route }) {
           await AsyncStorage.setItem('user_data', JSON.stringify(user));
         }
         
-        // Navigate to main app
-        navigation.navigate('Tabs');
+        // Reset navigation stack to prevent going back to auth screens
+        navigation.dispatch(
+          CommonActions.reset({
+            index: 0,
+            routes: [{ name: 'Tabs' }],
+          })
+        );
       } else {
         throw new Error(data.message || 'Failed to update phone number');
       }

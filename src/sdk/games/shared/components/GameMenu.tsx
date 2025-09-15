@@ -42,7 +42,7 @@ export const GameMenu: React.FC<GameMenuProps> = ({
       </View>
       
       {/* Back button */}
-      <TouchableOpacity style={styles.backButton} onPress={() => handleGameExit(navigation as any)}>
+      <TouchableOpacity style={styles.backButton} onPress={() => handleGameExit(navigation as any, { stepsBack: 1 })}>
         <Ionicons name="arrow-back" size={24} color="#fff" />
       </TouchableOpacity>
       
