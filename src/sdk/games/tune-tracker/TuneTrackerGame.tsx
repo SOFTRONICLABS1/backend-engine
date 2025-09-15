@@ -1,7 +1,7 @@
 // TuneTrackerGame.tsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { View, useWindowDimensions, Text, TouchableOpacity, StyleSheet, Animated } from "react-native"
-import { Canvas, Path, Skia, vec, Line, Fill, Rect, Circle, Group } from "@shopify/react-native-skia"
+import { Canvas, Path, Skia, vec, Line, Fill, Rect } from "@shopify/react-native-skia"
 import { Ionicons } from "@expo/vector-icons"
 import { useNavigation, useRoute } from "@react-navigation/native"
 
@@ -259,8 +259,6 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
   const toleranceGlowAnim = useRef(new Animated.Value(0)).current
   const [recentlyCompletedNote, setRecentlyCompletedNote] = useState<string | null>(null)
   
-  // Progress circle state for current note being sung
-  const [currentNoteProgress, setCurrentNoteProgress] = useState<number>(0)
   
   // Falling sparkles when voice is in range
   const [fallingSparkles, setFallingSparkles] = useState<{
@@ -339,9 +337,9 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     const centerX = graphWidth / 2 + pianoWidth // Account for piano width offset
     const pitchY = freqToY(pitch) // Get Y position of current pitch
     
-    // Start sparkles below the progress circle (radius is 20, so start 25px below)
+    // Start sparkles around the pitch position
     const startX = centerX
-    const startY = pitchY + 25 // Start below the progress circle
+    const startY = pitchY + 25 // Start below the pitch position
     
     const sparkleOpacity = new Animated.Value(1)
     const sparkleY = new Animated.Value(startY)
@@ -357,7 +355,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
       createdAt: Date.now()
     }])
     
-    // Animate sparkle falling down from below the progress circle
+    // Animate sparkle falling down from the pitch position
     Animated.parallel([
       Animated.timing(sparkleOpacity, {
         toValue: 0,
@@ -847,8 +845,6 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
           noteProgress = Math.min(100, Math.max(0, (traversedWidth / noteWidth) * 100))
         }
         
-        // Update the current note progress for the circle display
-        setCurrentNoteProgress(noteProgress)
       }
       
       // Create falling sparkles when voice is in tolerance range
@@ -890,7 +886,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
             setRecentlyCompletedNote(null)
           })
           
-          // Note completed successfully - progress will be shown in the circle
+          // Note completed successfully
           
           // Calculate accuracy using FlappyBird method with collected samples
           let accuracy = 0
@@ -922,7 +918,6 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
       if (currentNoteInTolerance === noteId) {
         setCurrentNoteInTolerance(null)
         toleranceStartTime.current = null
-        setCurrentNoteProgress(0) // Reset progress when out of tolerance
         
         // Stop tolerance glow animation
         toleranceGlowAnim.stopAnimation()
@@ -1081,65 +1076,6 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
         {/* center vertical */}
         <Line p1={vec(halfWidth, 0)} p2={vec(halfWidth, graphHeight)} color="#ffffff" strokeWidth={2} />
 
-        {/* Progress circle behind the pitch point when singing */}
-        {pitch > 0 && targetInfo && currentNoteProgress > 0 && (() => {
-          const centerX = halfWidth
-          const centerY = freqToY(pitch)
-          const radius = 20
-          
-          // Determine color based on progress percentage
-          const getProgressColor = (progress: number) => {
-            if (progress < 30) return "rgba(255, 107, 107, 0.7)" // Red
-            if (progress < 60) return "rgba(255, 255, 0, 0.7)" // Yellow
-            if (progress < 90) return "rgba(255, 165, 0, 0.7)" // Orange
-            return "rgba(0, 255, 0, 0.7)" // Green
-          }
-          
-          const progressColor = getProgressColor(currentNoteProgress)
-          
-          // Create pie chart path for progress (clockwise from top)
-          const createPiePath = () => {
-            const path = Skia.Path.Make()
-            const startAngle = -Math.PI / 2 // Start from top (-90 degrees)
-            // For clockwise rotation, we add the progress angle directly
-            const sweepAngle = (currentNoteProgress / 100) * 2 * Math.PI
-            
-            if (currentNoteProgress >= 100) {
-              // Full circle
-              path.addCircle(centerX, centerY, radius)
-            } else if (currentNoteProgress > 0) {
-              // Create pie slice (clockwise from top)
-              path.moveTo(centerX, centerY) // Center point
-              path.lineTo(centerX, centerY - radius) // Start at top
-              
-              // Create points along the arc (clockwise)
-              const steps = Math.max(8, Math.floor(currentNoteProgress / 2)) // More steps for smoother arc
-              for (let i = 1; i <= steps; i++) {
-                const angle = startAngle + (i / steps) * sweepAngle
-                const x = centerX + radius * Math.cos(angle)
-                const y = centerY + radius * Math.sin(angle)
-                path.lineTo(x, y)
-              }
-              
-              path.lineTo(centerX, centerY) // Back to center
-            }
-            path.close()
-            return path
-          }
-          
-          const piePath = createPiePath()
-          
-          return (
-            <Group>
-              {/* Background circle */}
-              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.1)" />
-              {/* Progress pie */}
-              <Path path={piePath} color={progressColor} style="fill" />
-              {/* Border circle */}
-              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.3)" style="stroke" strokeWidth={1} />
-            </Group>
-          )
-        })()}
 
         {/* pitch line with proximity-based coloring */}
         {pitchPath && <Path path={pitchPath} color={pitchLineColor} style="stroke" strokeWidth={2} strokeCap="round" strokeJoin="round" />}
@@ -1172,7 +1108,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
         })()}
       </Canvas>
     )
-  }, [graphWidth, graphHeight, pitchPoints, targetSegments, viewportCenterFreq, renderTrigger, pitch, getCurrentTargetInfo, difficulty, completedNotes, currentNoteProgress, freqToY])
+  }, [graphWidth, graphHeight, pitchPoints, targetSegments, viewportCenterFreq, renderTrigger, pitch, getCurrentTargetInfo, difficulty, completedNotes, freqToY])
 
   // piano keys - left side with inline target highlight (orange)
   const pianoKeys = useMemo(() => {
@@ -1241,7 +1177,6 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     setCycleAccuracies([])
     setCompletedNotes(new Set())
     setCurrentNoteInTolerance(null)
-    setCurrentNoteProgress(0)
     setFallingSparkles([])
     toleranceStartTime.current = null
     accuracySamples.current = []
@@ -1288,7 +1223,6 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     setCycleAccuracies([])
     setCompletedNotes(new Set())
     setCurrentNoteInTolerance(null)
-    setCurrentNoteProgress(0)
     setFallingSparkles([])
     toleranceStartTime.current = null
     accuracySamples.current = []

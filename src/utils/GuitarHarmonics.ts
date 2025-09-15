@@ -30,35 +30,29 @@ function generateHarmonicWavDataUri(frequency: number, durationMs: number, sampl
   writeString("data");
   view.setUint32(offset, dataSize, true); offset += 4;
 
-  // Generate guitar-like harmonic tones
+  // Generate TuneTracker-style harmonic tones
   for (let i = 0; i < totalSamples; i++) {
     const t = i / sampleRate;
+
+    // Match TuneTracker's exact harmonic structure
+    const s1 = Math.sin(2 * Math.PI * frequency * t);
+    const s2 = 0.35 * Math.sin(2 * Math.PI * frequency * 2 * t);
+    const s3 = 0.12 * Math.sin(2 * Math.PI * frequency * 3 * t);
+
+    let sample = (s1 + s2 + s3) * (volume * 0.9);
     
-    // Create multiple harmonics for rich guitar-like sound
-    const fundamental = Math.sin(2 * Math.PI * frequency * t);
-    const harmonic2 = 0.4 * Math.sin(2 * Math.PI * frequency * 2 * t);
-    const harmonic3 = 0.2 * Math.sin(2 * Math.PI * frequency * 3 * t);
-    const harmonic5 = 0.1 * Math.sin(2 * Math.PI * frequency * 5 * t);
-    const subharmonic = 0.15 * Math.sin(2 * Math.PI * frequency * 0.5 * t);
-    
-    let sample = (fundamental + harmonic2 + harmonic3 + harmonic5 + subharmonic) * volume;
-    
-    // Apply envelope (attack, sustain, release)
-    const attack = Math.min(0.05, durationSeconds * 0.15);
-    const release = Math.min(0.1, durationSeconds * 0.3);
+    // Apply TuneTracker-style envelope (simple attack/release)
+    const attack = Math.min(0.02, durationSeconds * 0.2);
+    const release = Math.min(0.03, durationSeconds * 0.25);
     let amp = 1.0;
-    
+
     if (t < attack) {
       amp = t / attack;
     } else if (t > durationSeconds - release) {
       amp = Math.max(0, (durationSeconds - t) / release);
     }
-    
+
     sample *= amp;
-    
-    // Add subtle vibrato for more musical feel
-    const vibrato = 1 + 0.02 * Math.sin(2 * Math.PI * 4 * t);
-    sample *= vibrato;
     
     const intSample = Math.max(-1, Math.min(1, sample)) * 0x7FFF;
     view.setInt16(offset, Math.floor(intSample), true);
@@ -80,7 +74,7 @@ export class GuitarHarmonics {
   private activeSounds: Audio.Sound[] = [];
 
   constructor() {
-    console.log('🎸 GuitarHarmonics: Initialized with expo-av backend');
+    console.log('🎵 TuneTrackerHarmonics: Initialized with expo-av backend');
   }
 
   private async playDataUriWithExpo(dataUri: string): Promise<void> {
@@ -103,36 +97,36 @@ export class GuitarHarmonics {
           } catch {}
         }
       });
-    } catch (e) { 
-      console.warn('🎸 GuitarHarmonics: expo-av playback error', e);
+    } catch (e) {
+      console.warn('🎵 TuneTrackerHarmonics: expo-av playback error', e);
     }
   }
 
   playNote(note: string, duration: number): void {
-    console.log(`🎸 GuitarHarmonics: Playing note ${note} (${duration}ms)`);
+    console.log(`🎵 TuneTrackerHarmonics: Playing note ${note} (${duration}ms)`);
     const frequency = NOTE_FREQUENCIES[note];
     if (!frequency) {
-      console.warn(`🎸 GuitarHarmonics: Note ${note} not found in frequencies`);
+      console.warn(`🎵 TuneTrackerHarmonics: Note ${note} not found in frequencies`);
       return;
     }
-    console.log(`🎸 GuitarHarmonics: Note ${note} -> ${frequency}Hz`);
+    console.log(`🎵 TuneTrackerHarmonics: Note ${note} -> ${frequency}Hz`);
     
     try {
       const dataUri = generateHarmonicWavDataUri(frequency, duration);
       this.playDataUriWithExpo(dataUri);
     } catch (error) {
-      console.warn('🎸 GuitarHarmonics: Error generating harmonic tone:', error);
+      console.warn('🎵 TuneTrackerHarmonics: Error generating harmonic tone:', error);
     }
   }
 
   stopAll(): void {
-    console.log('🎸 GuitarHarmonics: Stopping all sounds');
+    console.log('🎵 TuneTrackerHarmonics: Stopping all sounds');
     this.activeSounds.forEach(sound => {
       try {
         sound.stopAsync();
         sound.unloadAsync();
       } catch (error) {
-        console.warn('🎸 GuitarHarmonics: Error stopping sound:', error);
+        console.warn('🎵 TuneTrackerHarmonics: Error stopping sound:', error);
       }
     });
     this.activeSounds = [];
