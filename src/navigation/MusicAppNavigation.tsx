@@ -215,7 +215,15 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
               {/* Main App Screens */}
               <Stack.Screen name="Tabs" component={TabNavigator} />
               <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-              <Stack.Screen name="Game" component={GameScreen} />
+              <Stack.Screen
+                name="Game"
+                component={GameScreen}
+                options={{
+                  animation: 'fade',
+                  animationDuration: 200,
+                  gestureEnabled: false
+                }}
+              />
               <Stack.Screen name="EditProfile" component={EditProfileScreen} />
               <Stack.Screen name="MusicSettings" component={MusicSettingsScreen} />
               <Stack.Screen name="CreatePost" component={CreatePostScreen} />
@@ -223,8 +231,22 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
               <Stack.Screen name="ContentViewer" component={ContentViewerScreen} options={{ headerShown: false }} />
               <Stack.Screen name="UserExplore" component={UserExploreScreen} options={{ headerShown: false }} />
               <Stack.Screen name="UserHome" component={UserHomeScreen} options={{ headerShown: false }} />
-              <Stack.Screen name="Games" component={GamesScreen} />
-              <Stack.Screen name="GamePayload" component={GamePayloadScreen} />
+              <Stack.Screen
+                name="Games"
+                component={GamesScreen}
+                options={{
+                  animation: 'fade',
+                  animationDuration: 200
+                }}
+              />
+              <Stack.Screen
+                name="GamePayload"
+                component={GamePayloadScreen}
+                options={{
+                  animation: 'fade',
+                  animationDuration: 300
+                }}
+              />
               <Stack.Screen name="Profile" component={ProfileScreen} />
               <Stack.Screen name="Followers" component={FollowersScreen} />
               <Stack.Screen name="Following" component={FollowingScreen} />
