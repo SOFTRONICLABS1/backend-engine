@@ -6,6 +6,7 @@ import { handleGameExit } from "@/utils/gameNavigation"
 import RequireMicAccess from "@/components/RequireMicAccess"
 import { AndroidOptimizedGame } from "@/components/AndroidOptimizedGame"
 import { NonBlockingGraphRenderer } from "@/components/NonBlockingGraphRenderer"
+import { targetWaveSmoothing } from "@/utils/targetWaveSmoothing"
 
 // Import optimized components
 import { PianoKeyboard, FrequencyDisplay, TopBar, PlayStopButton } from './components'
@@ -56,40 +57,82 @@ export const TuneTrackerAndroidFixed = ({ notes }: { notes?: any }) => {
 
   const { pitch, pitchPoints, micAccess, setPitchPoints, currentFPS } = pitchDetection
 
-  // Target notes processing with Android optimization
+  // Enhanced target notes processing for smooth center line transitions
   const targetPoints = useMemo(() => {
     if (!notes || !Array.isArray(notes) || !isRecording) return []
 
     try {
       const now = Date.now()
       const elapsedMs = now - startTimeRef.current
+      const PIXELS_PER_MS = 60 / 1000
 
-      return notes
+      // Enhanced note processing with smooth transitions
+      const enhancedPoints: any[] = []
+
+      notes
         .filter(note => {
-          // Only show notes that are currently active or upcoming
+          // Show notes that are currently active or upcoming with longer buffer
           const noteStartTime = note.startTime || 0
           const noteDuration = note.duration || 1000
-          return noteStartTime <= elapsedMs + 2000 && noteStartTime + noteDuration >= elapsedMs - 1000
+          return noteStartTime <= elapsedMs + 3000 && noteStartTime + noteDuration >= elapsedMs - 1500
         })
-        .map((note, index) => {
+        .forEach((note, index) => {
           const noteStartTime = note.startTime || index * 1000
-          const x = (noteStartTime - elapsedMs) * (60 / 1000) // PIXELS_PER_MS
+          const noteDuration = note.duration || 1000
+          const noteEndTime = noteStartTime + noteDuration
           const frequency = NOTE_FREQUENCIES[note.pitch] || 440
           const y = freqToY(frequency)
 
-          return {
-            x: Math.max(0, Math.min(graphWidth, x)),
-            y,
-            frequency,
-            timestamp: now,
+          // Generate multiple points for smooth note transitions
+          const pointCount = Math.max(3, Math.min(10, Math.floor(noteDuration / 100))) // 3-10 points per note
+
+          for (let i = 0; i <= pointCount; i++) {
+            const progress = i / pointCount
+            const currentTime = noteStartTime + (noteDuration * progress)
+            const x = (currentTime - elapsedMs) * PIXELS_PER_MS
+
+            // Enhanced smoothing for note endings near center line
+            let adjustedY = y
+            if (Math.abs(y - centerLineY) < 10) {
+              // Smooth approach and departure from center line
+              if (progress > 0.8) {
+                // Note ending - smooth fade out
+                const fadeProgress = (progress - 0.8) / 0.2
+                const fadeOffset = Math.sin(fadeProgress * Math.PI) * 2 // Gentle sine wave
+                adjustedY = y + fadeOffset
+              } else if (progress < 0.2) {
+                // Note beginning - smooth fade in
+                const fadeProgress = progress / 0.2
+                const fadeOffset = Math.sin(fadeProgress * Math.PI) * 2
+                adjustedY = y + fadeOffset
+              }
+            }
+
+            enhancedPoints.push({
+              x: Math.max(0, Math.min(graphWidth, x)),
+              y: adjustedY,
+              frequency,
+              timestamp: now,
+              noteId: `${note.pitch}-${index}`,
+              progress,
+            })
           }
         })
-        .filter(point => point.x >= -50 && point.x <= graphWidth + 50) // Only visible points
+
+      // Filter only visible points and sort by x position for smooth rendering
+      const visiblePoints = enhancedPoints
+        .filter(point => point.x >= -100 && point.x <= graphWidth + 100)
+        .sort((a, b) => a.x - b.x) // Ensure proper order for smooth path
+
+      // Apply specialized target wave smoothing for Android center line interactions
+      return Platform.OS === 'android'
+        ? targetWaveSmoothing.smoothTargetPoints(visiblePoints, centerLineY, graphWidth)
+        : visiblePoints
     } catch (error) {
       console.warn('Error processing target points:', error)
       return []
     }
-  }, [notes, isRecording, startTimeRef, NOTE_FREQUENCIES, freqToY, graphWidth])
+  }, [notes, isRecording, startTimeRef, NOTE_FREQUENCIES, freqToY, graphWidth, centerLineY])
 
   // Update recording controls with setPitchPoints
   React.useEffect(() => {
