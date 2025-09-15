@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react"
 import { View, useWindowDimensions, TouchableOpacity, Text, StyleSheet, Platform, Image as RNImage, Animated } from "react-native"
 import { Canvas, Rect, Circle, Text as SkiaText, matchFont, Path, Skia, Group } from "@shopify/react-native-skia"
+import { activateKeepAwake, deactivateKeepAwake } from 'expo-keep-awake'
 import { MaterialCommunityIcons, Ionicons } from "@expo/vector-icons"
 import { useNavigation, useRoute } from "@react-navigation/native"
 import { GameMenu, GameOverScreen, type Difficulty, type BPM, type GameStats } from '../shared/components'
@@ -410,7 +411,20 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       }
     }
   }, [])
-  
+
+  // Keep screen awake during gameplay
+  useEffect(() => {
+    // Activate keep awake when game starts
+    activateKeepAwake()
+    console.log('🔥 FlappyBirdGame: Screen keep awake activated')
+
+    // Deactivate keep awake when component unmounts
+    return () => {
+      deactivateKeepAwake()
+      console.log('🔥 FlappyBirdGame: Screen keep awake deactivated')
+    }
+  }, [])
+
   // Set tolerance based on difficulty (constant for all cycles and notes)
   useEffect(() => {
     const newTolerance = DIFFICULTY_SETTINGS[difficulty].frequencyTolerance

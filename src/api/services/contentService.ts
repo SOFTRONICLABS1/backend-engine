@@ -1,10 +1,12 @@
 /**
  * Content Service
  * Handles content upload, retrieval, and management
+ * Now with intelligent caching for better performance
  */
 
 import apiClient from '../client';
 import { API_ENDPOINTS } from '../config';
+import contentCacheService from '../../services/ContentCacheService';
 
 class ContentService {
   /**
@@ -55,19 +57,37 @@ class ContentService {
 
 
   /**
-   * Get content details by ID
+   * Get content details by ID (with intelligent caching)
    * @param {string} contentId - Content ID
    * @returns {Promise} Content details
    */
   async getContentDetails(contentId: string) {
+    return contentCacheService.getContentDetails(contentId);
+  }
+
+  /**
+   * Get multiple content details efficiently (batch processing)
+   * @param {string[]} contentIds - Array of content IDs
+   * @returns {Promise} Array of content details
+   */
+  async getMultipleContentDetails(contentIds: string[]) {
+    return contentCacheService.getMultipleContentDetails(contentIds);
+  }
+
+  /**
+   * Get content details directly from API (bypassing cache)
+   * @param {string} contentId - Content ID
+   * @returns {Promise} Content details
+   */
+  async getContentDetailsFromAPI(contentId: string) {
     try {
-      console.log('=================== Fetching Content Details ===================');
-      
+      console.log('=================== Fetching Content Details (Direct API) ===================');
+
       const response = await apiClient.get(API_ENDPOINTS.CONTENT.DETAILS(contentId));
-      
+
       console.log('✅ Content details fetched successfully');
       console.log('=================== Content Details Fetched ===================');
-      
+
       return response.data;
     } catch (error: any) {
       console.error('Failed to fetch content details:', error);

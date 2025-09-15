@@ -150,25 +150,46 @@ export default function ProfileTabs({ playlists, onCreatePress, onPostPress, onP
       
       if (response.contents && response.contents.length > 0) {
         console.log('📷 Sample content item structure:', JSON.stringify(response.contents[0], null, 2));
-        console.log('📋 ProfileTabs - Fetching content details for all posts before displaying...');
-        
-        // Fetch detailed content for each item first to get download URLs
-        const fetchDetailsPromises = response.contents.map(async (content) => {
-          try {
-            const details = await contentService.getContentDetails(content.id);
+        console.log('📋 ProfileTabs - Fetching content details for all posts (using cache)...');
+
+        // Use batch request for better performance and caching
+        const contentIds = response.contents.map(content => content.id);
+        let contentsWithDetails;
+
+        try {
+          const batchDetails = await contentService.getMultipleContentDetails(contentIds);
+
+          // Merge content with details
+          contentsWithDetails = response.contents.map((content, index) => {
+            const details = batchDetails[index];
             return {
               ...content,
               download_url: details?.download_url || content.download_url,
               details: details
             };
-          } catch (error) {
-            console.log(`Error fetching details for content ${content.id}:`, error);
-            // Return content without details if API call fails
-            return content;
-          }
-        });
-        
-        const contentsWithDetails = await Promise.all(fetchDetailsPromises);
+          });
+
+          console.log('✅ ProfileTabs - Batch content details fetched successfully');
+        } catch (error) {
+          console.error('❌ ProfileTabs - Batch fetch failed, falling back to individual requests:', error);
+
+          // Fallback to individual requests if batch fails
+          const fetchDetailsPromises = response.contents.map(async (content) => {
+            try {
+              const details = await contentService.getContentDetails(content.id);
+              return {
+                ...content,
+                download_url: details?.download_url || content.download_url,
+                details: details
+              };
+            } catch (error) {
+              console.log(`Error fetching details for content ${content.id}:`, error);
+              return content;
+            }
+          });
+
+          contentsWithDetails = await Promise.all(fetchDetailsPromises);
+        }
         console.log('📋 ProfileTabs - All content details fetched, now displaying posts');
         
         if (reset) {

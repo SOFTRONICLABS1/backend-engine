@@ -113,19 +113,21 @@ export default function GamePayloadScreen() {
 
       console.log('🚀 Launching game with payload:', payload);
 
-      // Navigate to the game screen with the GameLauncher component
-      navigation.navigate('Game', {
+      // Replace current screen with game screen for smoother navigation
+      navigation.replace('Game', {
         payload: payload,
         gameTitle: gameTitle,
+        contentId: contentId,
+        contentTitle: contentTitle,
         onGameEnd: (score) => {
           console.log('Game ended with score:', score);
           // Navigate back to the games list
-          navigation.goBack();
+          navigation.navigate('Games', route.params);
         },
         onError: (error) => {
           console.error('Game error:', error);
           // Navigate back on error
-          navigation.goBack();
+          navigation.navigate('Games', route.params);
         }
       });
 

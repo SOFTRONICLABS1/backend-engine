@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Alert, Text, SafeAreaView } from 'react-native';
+import { activateKeepAwake, deactivateKeepAwake } from 'expo-keep-awake';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
 import { GameLauncher } from '../../sdk/GameLauncher';
@@ -56,6 +57,19 @@ export default function GameScreen({ route, navigation }) {
     };
   }, [gameStarted]);
 
+  // Keep screen awake during gameplay
+  useEffect(() => {
+    // Activate keep awake when entering game screen
+    activateKeepAwake();
+    console.log('🔥 GameScreen: Screen keep awake activated');
+
+    // Deactivate keep awake when leaving game screen
+    return () => {
+      deactivateKeepAwake();
+      console.log('🔥 GameScreen: Screen keep awake deactivated');
+    };
+  }, []);
+
   const handleContentLoad = (content) => {
     console.log('Game content loaded:', content);
     setGameStarted(true);
@@ -68,7 +82,7 @@ export default function GameScreen({ route, navigation }) {
       `Your score: ${score}\nGame: ${content?.title || gameTitle}`,
       [
         { text: 'Play Again', onPress: () => setGameStarted(false) },
-        { text: 'Close', onPress: () => navigation.goBack() }
+        { text: 'Close', onPress: () => navigation.navigate('Games', route.params) }
       ]
     );
   };
@@ -78,13 +92,14 @@ export default function GameScreen({ route, navigation }) {
     Alert.alert(
       'Game Error',
       error?.message || 'Failed to load game',
-      [{ text: 'OK', onPress: () => navigation.goBack() }]
+      [{ text: 'OK', onPress: () => navigation.navigate('Games', route.params) }]
     );
   };
 
   const handleClose = () => {
     setGameStarted(false);
-    navigation.goBack();
+    // Navigate back to Games screen, skipping the GamePayload (loading screen)
+    navigation.navigate('Games', route.params);
   };
 
   const handleStartGame = () => {
@@ -104,7 +119,7 @@ export default function GameScreen({ route, navigation }) {
               }
             }
           },
-          { text: 'Cancel', onPress: () => navigation.goBack() }
+          { text: 'Cancel', onPress: () => navigation.navigate('Games', route.params) }
         ]
       );
       return;
@@ -115,7 +130,7 @@ export default function GameScreen({ route, navigation }) {
       `Loading ${gameTitle}...\n\nContent ID: ${contentId}\nGame ID: ${gameId}`,
       [
         { text: 'Start Playing', onPress: () => setGameStarted(true) },
-        { text: 'Cancel', onPress: () => navigation.goBack() }
+        { text: 'Cancel', onPress: () => navigation.navigate('Games', route.params) }
       ]
     );
   };
