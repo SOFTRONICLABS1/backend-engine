@@ -16,7 +16,7 @@ export default function AuthScreen() {
       // Use the database API response data
       const isNewUser = databaseData.is_new_user;
       const user = databaseData.user;
-      const hasUsername = user && user.username && user.username !== null;
+      const hasUsername = user && user.username && user.username !== null && user.username !== 'null';
       
       if (isNewUser === false && hasUsername) {
         // Existing user with complete profile - go to main music app

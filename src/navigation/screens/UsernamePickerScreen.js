@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  SafeAreaView, 
-  TouchableOpacity, 
+import {
+  View,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
   TextInput,
   ScrollView,
   Alert,
   Text,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from 'react-native';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
@@ -18,6 +19,7 @@ export default function UsernamePickerScreen({ navigation, route }) {
   const { theme } = useTheme();
   const [username, setUsername] = useState('');
   const [suggestions, setSuggestions] = useState([]);
+  const [checkedSuggestions, setCheckedSuggestions] = useState([]);
   const [isUsernameValid, setIsUsernameValid] = useState(false);
   const [isUsernameAvailable, setIsUsernameAvailable] = useState(null);
   const [isCheckingUsername, setIsCheckingUsername] = useState(false);
@@ -32,25 +34,84 @@ export default function UsernamePickerScreen({ navigation, route }) {
   const userEmail = user.email || 'user@example.com';
   const userEmailPrefix = userEmail.split('@')[0];
 
+  // Get user's name for suggestions
+  const userName = user.name || user.displayName || userEmailPrefix;
+  const userFirstName = userName.split(' ')[0].toLowerCase();
+  const userLastName = userName.split(' ')[1]?.toLowerCase() || '';
+  const userFullNameClean = userName.replace(/\s+/g, '').toLowerCase();
+
+  // Check availability of username suggestions
+  const checkSuggestionsAvailability = useCallback(async (token) => {
+    // Generate more unique suggestions
+    const allSuggestions = [
+      userFirstName,
+      userFullNameClean,
+      userLastName ? `${userFirstName}.${userLastName}` : `${userFirstName}.music`,
+      userLastName ? `${userFirstName}_${userLastName}` : `${userFirstName}_beats`,
+      `${userFirstName}.123`,
+      `${userFirstName}.456`,
+      `music_${userFirstName}`,
+      `${userFirstName}_player`,
+      `beat.${userFirstName}`,
+      `${userFirstName}_official`,
+      `the_${userFirstName}`,
+      `${userFirstName}.sound`,
+      `${userFirstName}_vibes`,
+      `${userFirstName}.pro`,
+      userLastName ? `${userLastName}.${userFirstName}` : `${userFirstName}_music`,
+    ];
+
+    // Remove duplicates and filter valid suggestions
+    const baseSuggestions = [...new Set(allSuggestions)].filter(suggestion =>
+      suggestion && suggestion.length >= 3 && suggestion !== userFirstName + userFirstName
+    );
+
+    const availableSuggestions = [];
+
+    for (const suggestion of baseSuggestions) {
+      try {
+        const response = await fetch('https://24pw8gqd0i.execute-api.us-east-1.amazonaws.com/api/v1/auth/check-username', {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            username: suggestion
+          })
+        });
+
+        const data = await response.json();
+        if (data.available) {
+          availableSuggestions.push(suggestion);
+        }
+      } catch (error) {
+        console.error('Failed to check suggestion:', suggestion, error);
+      }
+
+      // Stop after finding 5 available suggestions
+      if (availableSuggestions.length >= 5) {
+        break;
+      }
+    }
+
+    setCheckedSuggestions(availableSuggestions);
+  }, [userFirstName, userFullNameClean, userLastName]);
+
   useEffect(() => {
     // Get access token from params or storage
     const getAccessToken = async () => {
       const token = route?.params?.accessToken || await AsyncStorage.getItem('access_token');
       setAccessToken(token);
+
+      // Once we have the token, check username suggestions
+      if (token) {
+        checkSuggestionsAvailability(token);
+      }
     };
     getAccessToken();
-
-    // Generate username suggestions based on email
-    const baseSuggestions = [
-      userEmailPrefix,
-      `${userEmailPrefix}123`,
-      `${userEmailPrefix}_music`,
-      `music_${userEmailPrefix}`,
-      `${userEmailPrefix}_player`,
-      `beat_${userEmailPrefix}`,
-    ];
-    setSuggestions(baseSuggestions);
-  }, []);
+  }, [checkSuggestionsAvailability]);
 
   // Debounced username availability check
   const checkUsernameAvailability = useCallback(async (usernameToCheck) => {
@@ -96,16 +157,20 @@ export default function UsernamePickerScreen({ navigation, route }) {
       clearTimeout(debounceTimer.current);
     }
 
-    // Basic validation
-    const isValid = username.length >= 3 && /^[a-zA-Z0-9_]+$/.test(username);
+    // Basic validation - allow dots in the middle but not at the end
+    const isValid = username.length >= 3 &&
+      /^[a-zA-Z0-9_][a-zA-Z0-9_.]*[a-zA-Z0-9_]$/.test(username) &&
+      !username.endsWith('.');
     setIsUsernameValid(isValid);
     
     if (!isValid) {
       setIsUsernameAvailable(null);
       if (username.length > 0 && username.length < 3) {
         setUsernameError('Username must be at least 3 characters');
-      } else if (username.length > 0 && !/^[a-zA-Z0-9_]+$/.test(username)) {
-        setUsernameError('Username can only contain letters, numbers, and underscores');
+      } else if (username.length > 0 && (
+        !/^[a-zA-Z0-9_][a-zA-Z0-9_.]*[a-zA-Z0-9_]$/.test(username) || username.endsWith('.')
+      )) {
+        setUsernameError('Username can only contain letters, numbers, underscores, and dots (dots cannot be at the end)');
       } else {
         setUsernameError('');
       }
@@ -297,17 +362,18 @@ export default function UsernamePickerScreen({ navigation, route }) {
           )}
         </View>
 
-        {/* Professional Suggestions Section */}
-        <View style={[styles.suggestionsSection, { backgroundColor: theme.surface }]}>
-          <View style={styles.suggestionsHeader}>
-            <IconSymbol name="lightbulb.fill" size={20} color={theme.primary} />
-            <Text style={[styles.suggestionsTitle, { color: theme.text }]}>Suggested usernames</Text>
-          </View>
-          <Text style={[styles.suggestionsSubtitle, { color: theme.textSecondary }]}>
-            Tap any suggestion to use it instantly
-          </Text>
-          <View style={styles.suggestionsGrid}>
-            {suggestions.map((suggestion, index) => (
+        {/* Professional Suggestions Section - Only show if we have checked suggestions */}
+        {checkedSuggestions.length > 0 && (
+          <View style={[styles.suggestionsSection, { backgroundColor: theme.surface }]}>
+            <View style={styles.suggestionsHeader}>
+              <IconSymbol name="lightbulb.fill" size={20} color={theme.primary} />
+              <Text style={[styles.suggestionsTitle, { color: theme.text }]}>Available usernames</Text>
+            </View>
+            <Text style={[styles.suggestionsSubtitle, { color: theme.textSecondary }]}>
+              These usernames are available - tap to use
+            </Text>
+            <View style={styles.suggestionsGrid}>
+              {checkedSuggestions.map((suggestion, index) => (
               <TouchableOpacity
                 key={index}
                 style={[
@@ -327,9 +393,10 @@ export default function UsernamePickerScreen({ navigation, route }) {
                   <IconSymbol name="checkmark" size={12} color="white" />
                 )}
               </TouchableOpacity>
-            ))}
+              ))}
+            </View>
           </View>
-        </View>
+        )}
         </ScrollView>
 
         {/* Bottom Section */}
@@ -380,7 +447,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: Platform.OS === 'android' ? 40 : 20,
     paddingBottom: 10,
   },
   backButton: {
@@ -552,6 +619,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     marginHorizontal: 24,
+    marginTop: Platform.OS === 'android' ? 10 : 0,
   },
   progressText: {
     fontSize: 14,
