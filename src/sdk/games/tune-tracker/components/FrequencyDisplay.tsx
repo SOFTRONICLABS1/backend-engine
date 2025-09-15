@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { View, Text, StyleSheet } from 'react-native'
+import { getNoteFromFrequency } from '@/utils/frequencyCorrection'
 
 interface FrequencyDisplayProps {
   pitch: number
@@ -16,6 +17,7 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({
   getCurrentTargetInfo,
   noteFrequencies,
 }) => {
+  const previousFrequencyRef = useRef<number>(0)
   if (!isRecording || isPaused) {
     return null
   }
@@ -32,27 +34,24 @@ export const FrequencyDisplay: React.FC<FrequencyDisplayProps> = ({
 
   const renderTargetNote = () => {
     const targetInfo = getCurrentTargetInfo()
-    
+
     if (!targetInfo && pitch > 0) {
-      // Show closest note when no target is active
-      let closestNote = ""
-      let closestFreq = 0
-      let minDiff = Infinity
-      
-      for (const [note, noteFreq] of Object.entries(noteFrequencies)) {
-        const diff = Math.abs(pitch - (noteFreq as number))
-        if (diff < minDiff) {
-          minDiff = diff
-          closestNote = note
-          closestFreq = noteFreq as number
-        }
-      }
-      
-      if (closestNote) {
+      // Use enhanced octave-corrected note detection instead of simple closest note
+      const noteInfo = getNoteFromFrequency(pitch, previousFrequencyRef.current)
+      const fullNoteName = `${noteInfo.note}${noteInfo.octave}`
+      const expectedFreq = noteFrequencies[fullNoteName] || 0
+
+      // Update previous frequency for context in next detection
+      previousFrequencyRef.current = pitch
+
+      if (fullNoteName) {
         return (
           <View style={[styles.targetNoteDisplay, { backgroundColor: 'rgba(52,152,219,0.9)' }]}>
-            <Text style={styles.targetNoteText}>Closest: {closestNote}</Text>
-            <Text style={styles.targetFreqText}>{closestFreq.toFixed(1)} Hz</Text>
+            <Text style={styles.targetNoteText}>Detected: {fullNoteName}</Text>
+            <Text style={styles.targetFreqText}>{expectedFreq.toFixed(1)} Hz</Text>
+            <Text style={styles.detectionAccuracy}>
+              {noteInfo.cents > 0 ? `+${noteInfo.cents}` : noteInfo.cents} cents
+            </Text>
           </View>
         )
       }
@@ -158,5 +157,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     textAlign: 'center',
+  },
+  detectionAccuracy: {
+    color: '#2c3e50',
+    fontSize: 10,
+    fontWeight: '500',
+    textAlign: 'center',
+    marginTop: 2,
+    opacity: 0.8,
   },
 })

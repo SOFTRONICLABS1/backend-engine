@@ -3,6 +3,7 @@ import { Alert, Platform } from 'react-native';
 import { AudioModule } from 'expo-audio';
 import MicrophoneStreamModule, { AudioBuffer } from '../../modules/microphone-stream';
 import DSPModule from '../../specs/NativeDSPModule';
+import { getOptimizedAudioConfig, getOptimizedBufferSize, getOptimizedSampleRate } from '../utils/androidOptimization';
 
 interface PitchData {
   pitch: number;
@@ -15,18 +16,27 @@ interface PitchData {
 
 type MicrophonePermissionStatus = 'pending' | 'granted' | 'denied' | 'requesting';
 
+// Constants for audio processing
+const audioConfig = getOptimizedAudioConfig();
+const BUF_SIZE = getOptimizedBufferSize();
+const OVERLAP_SIZE = Platform.OS === 'android' ? 1024 : 4000;
+const MIN_FREQ = audioConfig.minFrequency;
+const MAX_FREQ = audioConfig.maxFrequency;
+const THRESHOLD_DEFAULT = audioConfig.pitchDetectionThreshold;
+const INITIAL_SAMPLE_RATE = getOptimizedSampleRate();
+
 // Global state for the microphone manager
 let globalMicrophoneState = {
   permissionStatus: 'pending' as MicrophonePermissionStatus,
   isStreaming: false,
   isInitializing: false,
-  sampleRate: 44100,
+  sampleRate: INITIAL_SAMPLE_RATE,
   pitchData: {
     pitch: -1,
     rms: 0,
-    audioBuffer: new Array(9000).fill(0),
+    audioBuffer: new Array(BUF_SIZE).fill(0),
     bufferId: 0,
-    sampleRate: 44100,
+    sampleRate: INITIAL_SAMPLE_RATE,
     timestamp: 0,
   } as PitchData,
 };
@@ -37,13 +47,6 @@ let microphoneSubscription: any = null;
 let isInitialized = false;
 let initializationPromise: Promise<void> | null = null;
 let healthCheckInterval: NodeJS.Timeout | null = null;
-
-// Constants for audio processing
-const BUF_SIZE = 9000;
-const OVERLAP_SIZE = 4000;
-const MIN_FREQ = 80;
-const MAX_FREQ = 1000;
-const THRESHOLD_DEFAULT = 0.3;
 
 // Global functions for managing microphone
 export const requestMicrophonePermission = async (retryCount = 0): Promise<MicrophonePermissionStatus> => {
@@ -105,7 +108,8 @@ export const requestMicrophonePermission = async (retryCount = 0): Promise<Micro
       console.log('🎤 Microphone permission granted, starting stream...');
       
       // Wait a bit before starting stream to ensure permission is fully processed
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Android needs more time to process permissions
+      await new Promise(resolve => setTimeout(resolve, Platform.OS === 'android' ? 300 : 100));
       await startMicrophoneStream();
       
       console.log('🎤 Microphone system fully initialized');
@@ -181,6 +185,8 @@ const startMicrophoneStream = async (retryCount = 0) => {
     let audioBuffer = new Array(BUF_SIZE).fill(0);
     let rmsQueue: number[] = [];
     let bufferIdCounter = 0;
+    let lastProcessTime = 0;
+    const processThrottle = Platform.OS === 'android' ? 50 : 100; // Process more frequently on Android
 
     // Clean up any existing subscription first
     if (microphoneSubscription) {
@@ -198,6 +204,13 @@ const startMicrophoneStream = async (retryCount = 0) => {
       if (!globalMicrophoneState.isStreaming) return;
 
       bufferIdCounter++;
+
+      // Throttle processing on Android to improve performance
+      const now = Date.now();
+      if (Platform.OS === 'android' && (now - lastProcessTime) < processThrottle) {
+        return;
+      }
+      lastProcessTime = now;
 
       // Update audio buffer with overlap
       const len = Math.min(buffer.samples.length, BUF_SIZE - OVERLAP_SIZE);
@@ -271,8 +284,10 @@ const startMicrophoneStream = async (retryCount = 0) => {
     setTimeout(async () => {
       try {
         const sampleRate = MicrophoneStreamModule.getSampleRate();
-        globalMicrophoneState.sampleRate = sampleRate;
-        console.log('🎤 Sample rate set to:', sampleRate);
+        // Use optimized sample rate for Android
+        const optimizedRate = Platform.OS === 'android' ? getOptimizedSampleRate() : sampleRate;
+        globalMicrophoneState.sampleRate = optimizedRate;
+        console.log('🎤 Sample rate set to:', optimizedRate, '(platform:', Platform.OS, ')');
       } catch (error) {
         console.error('Error getting sample rate:', error);
         globalMicrophoneState.sampleRate = 44100; // Default fallback
