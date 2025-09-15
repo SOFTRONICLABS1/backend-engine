@@ -196,7 +196,7 @@ class GamesService {
       }
 
       const response = await fetch(
-        `${BASE_URL}/games/latest-played?page=${page}&per_page=${perPage}`,
+        `${BASE_URL}/games/latest-played-from-logs?page=${page}&per_page=${perPage}`,
         {
           method: 'GET',
           headers: {

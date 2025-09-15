@@ -1311,7 +1311,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     <View style={styles.container}>
       {/* Top bar */}
       <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backButton} onPress={() => handleGameExit(navigation as any)}>
+        <TouchableOpacity style={styles.backButton} onPress={() => setGameState('menu')}>
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
       </View>

@@ -113,7 +113,7 @@ export const TuneTrackerGame = ({ notes }: { notes?: any }) => {
 
   // Handle back navigation
   const handleBackPress = useCallback(() => {
-    handleGameExit(navigation as any)
+    handleGameExit(navigation as any, { stepsBack: 1 })
   }, [navigation])
 
   // Microphone access check
