@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  StyleSheet, 
-  SafeAreaView, 
-  TouchableOpacity, 
+import {
+  View,
+  StyleSheet,
+  SafeAreaView,
+  TouchableOpacity,
   TextInput,
   ScrollView,
   Alert,
   Text,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform
 } from 'react-native';
 import { IconSymbol } from '../../components/ui/IconSymbol';
 import { useTheme } from '../../theme/ThemeContext';
@@ -253,7 +254,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingTop: Platform.OS === 'android' ? 60 : 20,
     paddingBottom: 10,
   },
   backButton: {

@@ -116,7 +116,7 @@ export function MusicAppNavigation({ onReady }: MusicAppNavigationProps) {
           console.log('👤 Username is undefined:', user.username === undefined);
           console.log('👤 Username truthy check:', !!user.username);
           
-          if (user.username && user.username !== null) {
+          if (user.username && user.username !== null && user.username !== 'null') {
             // User is authenticated and has complete profile - go to main app
             console.log('✅ User authenticated with complete profile - navigating to Tabs');
             console.log('=================== Auth Check Completed - Authenticated ===================');

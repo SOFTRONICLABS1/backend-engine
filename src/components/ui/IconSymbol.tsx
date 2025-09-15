@@ -72,6 +72,9 @@ export const IconSymbol: React.FC<IconSymbolProps> = ({ name, size, color }) => 
       'play.fill': 'play',
       'exclamationmark.triangle': 'warning',
       'chevron.left': 'chevron-back',
+      'checkmark.circle.fill': 'checkmark-circle',
+      'checkmark.circle': 'checkmark-circle-outline',
+      'exclamationmark.circle.fill': 'alert-circle',
     };
 
     // Material Icons mapping
