@@ -5,6 +5,8 @@ import { useGameScreenMicrophone } from '@/hooks/useGameScreenMicrophone'
 import { useAndroidPerformance } from '@/hooks/useAndroidPerformance'
 import { correctFrequencyOctave, smoothFrequencyTransition, validateAndroidFrequency } from '@/utils/frequencyCorrection'
 import { getIOSLevelPerformanceSettings, ANDROID_PERFORMANCE_SETTINGS } from '@/utils/androidOptimization'
+import { independentUserGraph } from '@/utils/independentUserGraph'
+import { frameRateOptimizer } from '@/utils/frameRateOptimizer'
 
 interface PitchPoint {
   x: number
@@ -107,9 +109,9 @@ export const useOptimizedPitchDetection = ({
   // Calculate clarity from RMS for compatibility
   const clarity = rms > 0 ? Math.min(rms * 10, 1.0) : 0
 
-  // Enhanced pitch validation with frequency correction
+  // Enhanced pitch validation - completely independent of target frequency
   const isValidPitch = useCallback((freq: number, clarityValue: number, rmsValue: number): boolean => {
-    // Android-specific validation
+    // Basic frequency validation - no target interference
     if (!validateAndroidFrequency(freq, rmsValue)) return false
 
     if (!freq || freq < config.MIN_FREQ || freq > config.MAX_FREQ) return false
@@ -119,11 +121,11 @@ export const useOptimizedPitchDetection = ({
 
     if (clarityValue < threshold) return false
 
-    // iOS-level deviation check - more tolerant for smooth transitions
+    // Simplified deviation check - no target proximity considerations
     if (lastValidPitch.current > 0) {
       const deviation = Math.abs(freq - lastValidPitch.current) / lastValidPitch.current
-      // Use same tolerance as iOS for consistent performance
-      if (deviation > config.MAX_PITCH_DEV) return false
+      // More tolerant threshold to prevent hanging near any frequency
+      if (deviation > config.MAX_PITCH_DEV * 1.5) return false // Increased tolerance
     }
 
     return true
@@ -154,112 +156,64 @@ export const useOptimizedPitchDetection = ({
     return correctedFreq
   }, [config])
 
-  // Enhanced point addition with iOS-level responsiveness
+  // Independent user graph processing - zero target interference
   const addPitchPoint = useCallback((frequency: number) => {
     const now = Date.now()
+    const elapsedMs = now - startTimeRef.current
+    const x = elapsedMs * (60 / 1000) // PIXELS_PER_MS
+    const y = freqToY(frequency)
 
-    // Only throttle if explicitly enabled (disabled by default for iOS-level performance)
-    if (Platform.OS === 'android' && ANDROID_PERFORMANCE_SETTINGS.throttleUpdates &&
-        (now - lastUpdateTime.current) < config.UPDATE_THROTTLE_MS) {
-      return
-    }
-    lastUpdateTime.current = now
+    // Use independent user graph processor for zero interference
+    const optimizedPoints = independentUserGraph.processUserPoint(frequency, now, x, y)
 
-    // Use immediate execution when throttling is disabled for iOS-level performance
-    const executeUpdate = () => {
-      const elapsedMs = now - startTimeRef.current
-      const x = elapsedMs * (60 / 1000) // PIXELS_PER_MS
-      const y = freqToY(frequency)
+    // Convert to expected format and update state
+    const formattedPoints: PitchPoint[] = optimizedPoints.map(point => ({
+      x: point.x,
+      y: point.y,
+      frequency: point.frequency,
+      timestamp: point.timestamp
+    }))
 
-      const newPoint: PitchPoint = {
-        x,
-        y,
-        frequency,
-        timestamp: now,
-      }
+    setPitchPoints(formattedPoints)
+  }, [freqToY, startTimeRef])
 
-      setPitchPoints(prevPoints => {
-        const cutoffTime = now - config.POINT_LIFETIME_MS
-
-        // More efficient filtering for Android
-        const validPoints = prevPoints.filter(point => point.timestamp > cutoffTime)
-        const updatedPoints = [...validPoints, newPoint]
-
-        // Keep only the most recent points
-        if (updatedPoints.length > config.MAX_PITCH_POINTS) {
-          return updatedPoints.slice(-config.MAX_PITCH_POINTS)
-        }
-
-        return updatedPoints
-      })
-    }
-
-    // Execute immediately or through throttledUpdate based on settings
-    if (Platform.OS === 'android' && !ANDROID_PERFORMANCE_SETTINGS.throttleUpdates) {
-      executeUpdate()
-    } else {
-      throttledUpdate(executeUpdate)
-    }
-  }, [freqToY, startTimeRef, config, throttledUpdate])
-
-  // Optimized pitch processing
+  // Ultra-fast pitch processing - minimal computation for maximum frame rate
   const processPitch = useCallback((detectedFreq: number, clarityValue: number, rmsValue: number) => {
     if (!isRecording || isPaused) {
       setPitch(0)
       return
     }
 
-    // Apply frequency correction for octave issues
-    const correctedFreq = correctDetectedFrequency(detectedFreq)
+    // Skip heavy frequency correction to prevent frame drops
+    let finalFreq = detectedFreq
 
-    if (!isValidPitch(correctedFreq, clarityValue, rmsValue)) {
-      // iOS-level fallback behavior for consistent experience
-      if (pitchStabilityBuffer.current.length > 2) {
-        const avgBuffered = pitchStabilityBuffer.current.reduce((sum, p) => sum + p, 0) / pitchStabilityBuffer.current.length
-        if (avgBuffered > 0) {
-          setPitch(avgBuffered)
-          addPitchPoint(avgBuffered)
-        }
-      }
+    // Minimal validation for performance
+    if (!finalFreq || finalFreq < config.MIN_FREQ || finalFreq > config.MAX_FREQ) {
       return
     }
 
-    // Simplified stability buffer for Android
-    pitchStabilityBuffer.current.push(correctedFreq)
-    if (pitchStabilityBuffer.current.length > config.STABILITY_BUFFER_SIZE) {
-      pitchStabilityBuffer.current.shift()
+    // Basic clarity check only
+    if (clarityValue < config.THRESHOLD_DEFAULT * 0.8) { // More lenient
+      return
     }
 
-    // iOS-level smoothing with enhanced responsiveness
-    let smoothedPitch = correctedFreq
+    // Minimal smoothing for performance
     if (prevPitch.current > 0) {
-      // Use iOS-level smoothing factor for consistent behavior
-      const dynamicSmoothingFactor = shouldReduceQuality() ? 0.4 : config.SMOOTHING_ALPHA
-      smoothedPitch = smoothFrequencyTransition(
-        prevPitch.current,
-        correctedFreq,
-        dynamicSmoothingFactor
-      )
-    } else {
-      smoothedPitch = correctedFreq
-    }
-
-    // iOS-level validation: less aggressive stability checking for smoother experience
-    if (prevPitch.current > 0) {
-      const changeRatio = Math.abs(smoothedPitch - prevPitch.current) / prevPitch.current
-      // Use same threshold as iOS for consistent behavior
-      if (changeRatio > 0.6) {
-        // More tolerant blending for smoother transitions
-        smoothedPitch = 0.7 * prevPitch.current + 0.3 * correctedFreq
+      const ratio = finalFreq / prevPitch.current
+      // Reject only extreme jumps to prevent glitches
+      if (ratio > 3 || ratio < 0.33) {
+        return
       }
+      // Light smoothing
+      finalFreq = 0.7 * finalFreq + 0.3 * prevPitch.current
     }
 
-    setPitch(smoothedPitch)
-    prevPitch.current = smoothedPitch
-    lastValidPitch.current = smoothedPitch
+    setPitch(finalFreq)
+    prevPitch.current = finalFreq
+    lastValidPitch.current = finalFreq
 
-    addPitchPoint(smoothedPitch)
-  }, [isRecording, isPaused, isValidPitch, addPitchPoint, correctDetectedFrequency, config, shouldReduceQuality])
+    addPitchPoint(finalFreq)
+  }, [isRecording, isPaused, addPitchPoint, config])
 
   // Process detected pitch with iOS-level responsiveness
   useEffect(() => {
@@ -278,7 +232,7 @@ export const useOptimizedPitchDetection = ({
     }
   }, [detectedPitch, clarity, rms, processPitch, shouldReduceQuality])
 
-  // Reset when recording stops
+  // Reset when recording stops - including independent user graph
   useEffect(() => {
     if (!isRecording) {
       setPitch(0)
@@ -287,6 +241,9 @@ export const useOptimizedPitchDetection = ({
       prevPitch.current = 0
       lastValidPitch.current = 0
       lastUpdateTime.current = 0
+
+      // Reset independent user graph processor
+      independentUserGraph.reset()
     }
   }, [isRecording])
 
@@ -296,6 +253,6 @@ export const useOptimizedPitchDetection = ({
     micAccess,
     setPitchPoints,
     isOptimized: Platform.OS === 'android',
-    currentFPS: shouldReduceQuality() ? '< 30' : '≥ 30',
+    currentFPS: frameRateOptimizer.getCurrentFPS(),
   }
 }
