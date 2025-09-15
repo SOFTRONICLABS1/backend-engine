@@ -161,7 +161,7 @@ export default class GameScore {
   // Submit score to API
   async submitToAPI() {
     const apiPayload = this.formatForAPI();
-    const apiUrl = 'https://24pw8gqd0i.execute-api.us-east-1.amazonaws.com/api/v1/games/scores';
+    const apiUrl = 'https://24pw8gqd0i.execute-api.us-east-1.amazonaws.com/api/v1/games/score-logs';
     
     // Get token from AsyncStorage
     const token = await AsyncStorage.getItem('access_token');

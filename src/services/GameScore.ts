@@ -191,7 +191,7 @@ export default class GameScore {
   // Submit score to API
   async submitToAPI(): Promise<GameScoreResponse> {
     const apiPayload = this.formatForAPI();
-    const apiUrl = 'https://24pw8gqd0i.execute-api.us-east-1.amazonaws.com/api/v1/games/scores';
+    const apiUrl = 'https://24pw8gqd0i.execute-api.us-east-1.amazonaws.com/api/v1/games/score-logs';
     
     // Log the complete API payload
     console.log('🎯 GameScore: Complete API Payload:', JSON.stringify(apiPayload, null, 2));
