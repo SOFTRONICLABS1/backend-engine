@@ -188,47 +188,45 @@ export default class GameScore {
     };
   }
 
-  // Submit score to API
+  // Submit score to API (fire-and-forget)
   async submitToAPI(): Promise<GameScoreResponse> {
     const apiPayload = this.formatForAPI();
     const apiUrl = 'https://24pw8gqd0i.execute-api.us-east-1.amazonaws.com/api/v1/games/score-logs';
-    
+
     // Log the complete API payload
     console.log('🎯 GameScore: Complete API Payload:', JSON.stringify(apiPayload, null, 2));
-    
+
     // Get token from AsyncStorage
     const token = await AsyncStorage.getItem('access_token');
     if (!token) {
       throw new Error('No access token found in AsyncStorage');
     }
-    
-    try {
-      const response = await fetch(apiUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify(apiPayload)
-      });
 
-      if (!response.ok) {
-        throw new Error(`API request failed with status: ${response.status}`);
+    // Fire-and-forget: send payload without waiting for response
+    fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(apiPayload)
+    }).then(response => {
+      if (response.ok) {
+        console.log('✅ GameScore: Successfully submitted to API');
+      } else {
+        console.error('❌ GameScore: Failed to submit to API:', response.status);
       }
-
-      const result = await response.json();
-      console.log('✅ GameScore: Successfully submitted to API:', result);
-      
-      // Reset GameState only after successful API submission
-      if (this.gameStateRef) {
-        this.gameStateRef.reset();
-      }
-      
-      return { success: true, data: result };
-    } catch (error: any) {
+    }).catch(error => {
       console.error('❌ GameScore: Failed to submit to API:', error);
-      return { success: false, error: error.message };
+    });
+
+    // Reset GameState immediately since we're not waiting for response
+    if (this.gameStateRef) {
+      this.gameStateRef.reset();
     }
+
+    // Return success immediately
+    return { success: true, data: null };
   }
 
   // Static method to create from GameState (deprecated - use create)
