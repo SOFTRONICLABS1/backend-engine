@@ -252,8 +252,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const particleIdCounter = useRef(0)
   
   // Progress circle state for current note being sung
-  const [currentNoteProgress, setCurrentNoteProgress] = useState<number>(0)
-  const [isInTargetPipe, setIsInTargetPipe] = useState<boolean>(false)
+  // const [currentNoteProgress, setCurrentNoteProgress] = useState<number>(0)
+  // const [isInTargetPipe, setIsInTargetPipe] = useState<boolean>(false)
   
   // Game mechanics
   const gameLoopRef = useRef<number>()
@@ -777,8 +777,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
               // Update progress state for any pipe the bird is near
               if (progress > 0) {
                 foundTargetPipe = true
-                setIsInTargetPipe(true)
-                setCurrentNoteProgress(progress)
+                // setIsInTargetPipe(true)
+                // setCurrentNoteProgress(progress)
               }
               
               if (isWithinThreshold) {
@@ -793,8 +793,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           
           // Reset progress if no target pipe found
           if (!foundTargetPipe) {
-            setIsInTargetPipe(false)
-            setCurrentNoteProgress(0)
+            // setIsInTargetPipe(false)
+            // setCurrentNoteProgress(0)
           }
         } else {
           // If no pitch for more than 200ms, stop flying
@@ -1285,8 +1285,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     // setParticles([])
     // setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
     // setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
-    setCurrentNoteProgress(0)
-    setIsInTargetPipe(false)
+    // setCurrentNoteProgress(0)
+    // setIsInTargetPipe(false)
     particleIdCounter.current = 0
     setGameState('playing')
     const now = Date.now()
@@ -1344,8 +1344,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     // setParticles([])
     // setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
     // setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
-    setCurrentNoteProgress(0)
-    setIsInTargetPipe(false)
+    // setCurrentNoteProgress(0)
+    // setIsInTargetPipe(false)
     particleIdCounter.current = 0
     
     // Clear GameState
@@ -1379,65 +1379,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           />
         ))} */}
         
-        {/* Progress circle behind bird when in target pipe */}
-        {pitch > 0 && isInTargetPipe && currentNoteProgress > 0 && (() => {
-          const centerX = bird.x + BIRD_SIZE / 2
-          const centerY = bird.y + BIRD_SIZE / 2
-          const radius = 25
-          
-          // Determine color based on progress percentage
-          const getProgressColor = (progress: number) => {
-            if (progress < 30) return "rgba(255, 107, 107, 0.7)" // Red
-            if (progress < 60) return "rgba(255, 255, 0, 0.7)" // Yellow
-            if (progress < 90) return "rgba(255, 165, 0, 0.7)" // Orange
-            return "rgba(0, 255, 0, 0.7)" // Green
-          }
-          
-          const progressColor = getProgressColor(currentNoteProgress)
-          
-          // Create pie chart path for progress (clockwise from top)
-          const createPiePath = () => {
-            const path = Skia.Path.Make()
-            const startAngle = -Math.PI / 2 // Start from top (-90 degrees)
-            // For clockwise rotation, we add the progress angle directly
-            const sweepAngle = (currentNoteProgress / 100) * 2 * Math.PI
-            
-            if (currentNoteProgress >= 100) {
-              // Full circle
-              path.addCircle(centerX, centerY, radius)
-            } else if (currentNoteProgress > 0) {
-              // Create pie slice (clockwise from top)
-              path.moveTo(centerX, centerY) // Center point
-              path.lineTo(centerX, centerY - radius) // Start at top
-              
-              // Create points along the arc (clockwise)
-              const steps = Math.max(8, Math.floor(currentNoteProgress / 2)) // More steps for smoother arc
-              for (let i = 1; i <= steps; i++) {
-                const angle = startAngle + (i / steps) * sweepAngle
-                const x = centerX + radius * Math.cos(angle)
-                const y = centerY + radius * Math.sin(angle)
-                path.lineTo(x, y)
-              }
-              
-              path.lineTo(centerX, centerY) // Back to center
-            }
-            path.close()
-            return path
-          }
-          
-          const piePath = createPiePath()
-          
-          return (
-            <Group>
-              {/* Background circle */}
-              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.1)" />
-              {/* Progress pie */}
-              <Path path={piePath} color={progressColor} style="fill" />
-              {/* Border circle */}
-              <Circle cx={centerX} cy={centerY} r={radius} color="rgba(255, 255, 255, 0.3)" style="stroke" strokeWidth={1} />
-            </Group>
-          )
-        })()}
+        {/* Progress circle behind bird when in target pipe - REMOVED FOR PERFORMANCE */}
         
         {/* Note labels in the gap - rendered on Canvas */}
         {pipes.map(pipe => (
