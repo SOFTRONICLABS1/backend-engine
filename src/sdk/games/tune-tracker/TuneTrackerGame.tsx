@@ -255,22 +255,22 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
   const toleranceStartTime = useRef<number | null>(null)
   
   // Visual feedback animations
-  const noteCompletionAnim = useRef(new Animated.Value(0)).current
-  const toleranceGlowAnim = useRef(new Animated.Value(0)).current
+  // const noteCompletionAnim = useRef(new Animated.Value(0)).current
+  // const toleranceGlowAnim = useRef(new Animated.Value(0)).current
   const [recentlyCompletedNote, setRecentlyCompletedNote] = useState<string | null>(null)
   
   
   // Falling sparkles when voice is in range
-  const [fallingSparkles, setFallingSparkles] = useState<{
-    id: string
-    x: number
-    y: number
-    opacity: Animated.Value
-    animatedY?: Animated.Value
-    color: string
-    size: number
-    createdAt: number
-  }[]>([])
+  // const [fallingSparkles, setFallingSparkles] = useState<{
+  //   id: string
+  //   x: number
+  //   y: number
+  //   opacity: Animated.Value
+  //   animatedY?: Animated.Value
+  //   color: string
+  //   size: number
+  //   createdAt: number
+  // }[]>([])
   
 
   // Note completion based on note width/duration from payload
@@ -330,48 +330,48 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
   const pitchToFrequency = useCallback((p: string) => NOTE_FREQUENCIES_MAP[p] || 440, [])
   
   // Create falling sparkles when voice is in range
-  const createFallingSparkle = useCallback(() => {
-    if (pitch <= 0) return // Only create sparkles when there's a valid pitch
-    
-    const sparkleId = `falling_${Date.now()}_${Math.random()}`
-    const centerX = graphWidth / 2 + pianoWidth // Account for piano width offset
-    const pitchY = freqToY(pitch) // Get Y position of current pitch
-    
-    // Start sparkles around the pitch position
-    const startX = centerX
-    const startY = pitchY + 25 // Start below the pitch position
-    
-    const sparkleOpacity = new Animated.Value(1)
-    const sparkleY = new Animated.Value(startY)
-    
-    setFallingSparkles(prev => [...prev.slice(-30), { // Keep max 30 sparkles
-      id: sparkleId,
-      x: startX,
-      y: startY,
-      opacity: sparkleOpacity,
-      animatedY: sparkleY,
-      color: '#FFD700', // Gold color
-      size: 12, // Fixed size for consistency
-      createdAt: Date.now()
-    }])
-    
-    // Animate sparkle falling down from the pitch position
-    Animated.parallel([
-      Animated.timing(sparkleOpacity, {
-        toValue: 0,
-        duration: 1500, // 1.5 seconds to fall
-        useNativeDriver: false
-      }),
-      Animated.timing(sparkleY, {
-        toValue: graphHeight, // Fall to bottom of graph
-        duration: 1500,
-        useNativeDriver: false
-      })
-    ]).start(() => {
-      // Remove sparkle after animation
-      setFallingSparkles(prev => prev.filter(s => s.id !== sparkleId))
-    })
-  }, [graphWidth, graphHeight, pianoWidth, pitch, freqToY])
+  // const createFallingSparkle = useCallback(() => {
+  //   if (pitch <= 0) return // Only create sparkles when there's a valid pitch
+  //
+  //   const sparkleId = `falling_${Date.now()}_${Math.random()}`
+  //   const centerX = graphWidth / 2 + pianoWidth // Account for piano width offset
+  //   const pitchY = freqToY(pitch) // Get Y position of current pitch
+  //
+  //   // Start sparkles around the pitch position
+  //   const startX = centerX
+  //   const startY = pitchY + 25 // Start below the pitch position
+  //
+  //   const sparkleOpacity = new Animated.Value(1)
+  //   const sparkleY = new Animated.Value(startY)
+  //
+  //   setFallingSparkles(prev => [...prev.slice(-30), { // Keep max 30 sparkles
+  //     id: sparkleId,
+  //     x: startX,
+  //     y: startY,
+  //     opacity: sparkleOpacity,
+  //     animatedY: sparkleY,
+  //     color: '#FFD700', // Gold color
+  //     size: 12, // Fixed size for consistency
+  //     createdAt: Date.now()
+  //   }])
+  //
+  //   // Animate sparkle falling down from the pitch position
+  //   Animated.parallel([
+  //     Animated.timing(sparkleOpacity, {
+  //       toValue: 0,
+  //       duration: 1500, // 1.5 seconds to fall
+  //       useNativeDriver: false
+  //     }),
+  //     Animated.timing(sparkleY, {
+  //       toValue: graphHeight, // Fall to bottom of graph
+  //       duration: 1500,
+  //       useNativeDriver: false
+  //     })
+  //   ]).start(() => {
+  //     // Remove sparkle after animation
+  //     setFallingSparkles(prev => prev.filter(s => s.id !== sparkleId))
+  //   })
+  // }, [graphWidth, graphHeight, pianoWidth, pitch, freqToY])
   
   // FlappyBird-style accuracy calculation functions
   // Note: Using modular pitch accuracy utility instead of local calculation
@@ -803,20 +803,20 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
         toleranceStartTime.current = currentTime
         
         // Start tolerance glow animation
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(toleranceGlowAnim, {
-              toValue: 1,
-              duration: 800,
-              useNativeDriver: false
-            }),
-            Animated.timing(toleranceGlowAnim, {
-              toValue: 0.3,
-              duration: 800,
-              useNativeDriver: false
-            })
-          ])
-        ).start()
+        // Animated.loop(
+        //   Animated.sequence([
+        //     Animated.timing(toleranceGlowAnim, {
+        //       toValue: 1,
+        //       duration: 800,
+        //       useNativeDriver: false
+        //     }),
+        //     Animated.timing(toleranceGlowAnim, {
+        //       toValue: 0.3,
+        //       duration: 800,
+        //       useNativeDriver: false
+        //     })
+        //   ])
+        // ).start()
       } 
       
       // Calculate progress for the current note being sung (based on how much width has been traversed)
@@ -848,16 +848,16 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
       }
       
       // Create falling sparkles when voice is in tolerance range
-      if (Math.abs(pitch - targetInfo.frequency) <= greenTolerance && Math.random() < 0.7) {
-        // Create multiple sparkles for a more dramatic effect
-        createFallingSparkle()
-        if (Math.random() < 0.4) {
-          setTimeout(() => createFallingSparkle(), 50) // Slight delay for second sparkle
-        }
-        if (Math.random() < 0.2) {
-          setTimeout(() => createFallingSparkle(), 100) // Slight delay for third sparkle
-        }
-      }
+      // if (Math.abs(pitch - targetInfo.frequency) <= greenTolerance && Math.random() < 0.7) {
+      //   // Create multiple sparkles for a more dramatic effect
+      //   createFallingSparkle()
+      //   if (Math.random() < 0.4) {
+      //     setTimeout(() => createFallingSparkle(), 50) // Slight delay for second sparkle
+      //   }
+      //   if (Math.random() < 0.2) {
+      //     setTimeout(() => createFallingSparkle(), 100) // Slight delay for third sparkle
+      //   }
+      // }
       
       if (currentNoteInTolerance === noteId) {
         // Continue singing the same note in tolerance
@@ -870,21 +870,21 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
           setCompletedNotes(prev => new Set([...prev, noteId]))
           
           // Trigger completion animation
-          setRecentlyCompletedNote(noteId)
-          Animated.sequence([
-            Animated.timing(noteCompletionAnim, {
-              toValue: 1,
-              duration: 300,
-              useNativeDriver: false
-            }),
-            Animated.timing(noteCompletionAnim, {
-              toValue: 0,
-              duration: 200,
-              useNativeDriver: false
-            })
-          ]).start(() => {
-            setRecentlyCompletedNote(null)
-          })
+          // setRecentlyCompletedNote(noteId)
+          // Animated.sequence([
+          //   Animated.timing(noteCompletionAnim, {
+          //     toValue: 1,
+          //     duration: 300,
+          //     useNativeDriver: false
+          //   }),
+          //   Animated.timing(noteCompletionAnim, {
+          //     toValue: 0,
+          //     duration: 200,
+          //     useNativeDriver: false
+          //   })
+          // ]).start(() => {
+          //   setRecentlyCompletedNote(null)
+          // })
           
           // Note completed successfully
           
@@ -920,8 +920,8 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
         toleranceStartTime.current = null
         
         // Stop tolerance glow animation
-        toleranceGlowAnim.stopAnimation()
-        toleranceGlowAnim.setValue(0)
+        // toleranceGlowAnim.stopAnimation()
+        // toleranceGlowAnim.setValue(0)
       }
     }
     
@@ -1177,7 +1177,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     setCycleAccuracies([])
     setCompletedNotes(new Set())
     setCurrentNoteInTolerance(null)
-    setFallingSparkles([])
+    // setFallingSparkles([])
     toleranceStartTime.current = null
     accuracySamples.current = []
     currentNoteForAccuracy.current = null
@@ -1223,7 +1223,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     setCycleAccuracies([])
     setCompletedNotes(new Set())
     setCurrentNoteInTolerance(null)
-    setFallingSparkles([])
+    // setFallingSparkles([])
     toleranceStartTime.current = null
     accuracySamples.current = []
     currentNoteForAccuracy.current = null
@@ -1403,7 +1403,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
 
 
       {/* Falling sparkles when voice is in range */}
-      {fallingSparkles.map(sparkle => (
+      {/* {fallingSparkles.map(sparkle => (
         <Animated.View
           key={sparkle.id}
           style={{
@@ -1425,7 +1425,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
             ✨
           </Text>
         </Animated.View>
-      ))}
+      ))} */}
 
       {/* Play/Stop - only show during game */}
       {gameState === 'playing' && (
