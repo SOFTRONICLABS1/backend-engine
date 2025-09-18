@@ -190,13 +190,14 @@ export default function SingleContentViewerScreen() {
       {/* Single Content Display with adjusted title position */}
       <View style={[styles.contentContainer, { height: itemHeight }]}>
         <View style={styles.gamePreviewWrapper}>
-          <GamePreview 
-            musicVideoReel={content} 
+          <GamePreview
+            musicVideoReel={content}
             navigation={navigation}
             itemHeight={itemHeight}
             showFollowButton={true}
             isScreenFocused={true}
             isCurrentItem={true}
+            hideDeleteOption={true}
           />
         </View>
       </View>
