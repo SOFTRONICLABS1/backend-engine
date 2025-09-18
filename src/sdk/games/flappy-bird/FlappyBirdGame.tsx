@@ -245,9 +245,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [bpm, setBpm] = useState<BPM>(60)
   
   // Effects state
-  const [particles, setParticles] = useState<Particle[]>([])
-  const [screenShake, setScreenShake] = useState<ScreenShake>({ x: 0, y: 0, duration: 0, intensity: 0 })
-  const [visualFeedback, setVisualFeedback] = useState({ glow: false, pulse: false, correctPitch: false })
+  // COMMENTED OUT FOR PERFORMANCE
+  // const [particles, setParticles] = useState<Particle[]>([])
+  // const [screenShake, setScreenShake] = useState<ScreenShake>({ x: 0, y: 0, duration: 0, intensity: 0 })
+  // const [visualFeedback, setVisualFeedback] = useState({ glow: false, pulse: false, correctPitch: false })
   const particleIdCounter = useRef(0)
   
   // Progress circle state for current note being sung
@@ -505,57 +506,58 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Note: Using modular pitch accuracy utility for cycle calculations
   
   // Particle system functions
-  const createParticles = useCallback((x: number, y: number, type: Particle['type'], count: number = 5) => {
-    const newParticles: Particle[] = []
-    
-    for (let i = 0; i < count; i++) {
-      const particle: Particle = {
-        id: particleIdCounter.current++,
-        x,
-        y,
-        vx: (Math.random() - 0.5) * 10,
-        vy: (Math.random() - 0.5) * 10,
-        life: 1,
-        maxLife: 1,
-        size: Math.random() * 6 + 2,
-        color: getParticleColor(type),
-        type
-      }
-      
-      // Adjust particle properties based on type
-      switch (type) {
-        case 'explosion':
-          particle.vx = (Math.random() - 0.5) * 20
-          particle.vy = (Math.random() - 0.5) * 20
-          particle.maxLife = 60
-          particle.life = 60
-          break
-        case 'spark':
-          particle.vx = (Math.random() - 0.5) * 8
-          particle.vy = Math.random() * -8 - 2
-          particle.maxLife = 30
-          particle.life = 30
-          break
-        case 'trail':
-          particle.vx = (Math.random() - 0.5) * 4
-          particle.vy = (Math.random() - 0.5) * 4
-          particle.maxLife = 20
-          particle.life = 20
-          break
-        case 'celebration':
-          particle.vx = (Math.random() - 0.5) * 12
-          particle.vy = Math.random() * -15 - 5
-          particle.maxLife = 80
-          particle.life = 80
-          particle.size = Math.random() * 8 + 4
-          break
-      }
-      
-      newParticles.push(particle)
-    }
-    
-    setParticles(prev => [...prev.slice(-(MAX_PARTICLES - count)), ...newParticles])
-  }, [])
+  // COMMENTED OUT FOR PERFORMANCE
+  // const createParticles = useCallback((x: number, y: number, type: Particle['type'], count: number = 5) => {
+  //   const newParticles: Particle[] = []
+  //
+  //   for (let i = 0; i < count; i++) {
+  //     const particle: Particle = {
+  //       id: particleIdCounter.current++,
+  //       x,
+  //       y,
+  //       vx: (Math.random() - 0.5) * 10,
+  //       vy: (Math.random() - 0.5) * 10,
+  //       life: 1,
+  //       maxLife: 1,
+  //       size: Math.random() * 6 + 2,
+  //       color: getParticleColor(type),
+  //       type
+  //     }
+  //
+  //     // Adjust particle properties based on type
+  //     switch (type) {
+  //       case 'explosion':
+  //         particle.vx = (Math.random() - 0.5) * 20
+  //         particle.vy = (Math.random() - 0.5) * 20
+  //         particle.maxLife = 60
+  //         particle.life = 60
+  //         break
+  //       case 'spark':
+  //         particle.vx = (Math.random() - 0.5) * 8
+  //         particle.vy = Math.random() * -8 - 2
+  //         particle.maxLife = 30
+  //         particle.life = 30
+  //         break
+  //       case 'trail':
+  //         particle.vx = (Math.random() - 0.5) * 4
+  //         particle.vy = (Math.random() - 0.5) * 4
+  //         particle.maxLife = 20
+  //         particle.life = 20
+  //         break
+  //       case 'celebration':
+  //         particle.vx = (Math.random() - 0.5) * 12
+  //         particle.vy = Math.random() * -15 - 5
+  //         particle.maxLife = 80
+  //         particle.life = 80
+  //         particle.size = Math.random() * 8 + 4
+  //         break
+  //     }
+  //
+  //     newParticles.push(particle)
+  //   }
+  //
+  //   setParticles(prev => [...prev.slice(-(MAX_PARTICLES - count)), ...newParticles])
+  // }, [])
   
   const getParticleColor = (type: Particle['type']): string => {
     switch (type) {
@@ -733,7 +735,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         setPitchHistory(prev => [...prev.slice(-9), detectedPitch]); // Keep last 10 values
         setBufferIdHistory(prev => [...prev.slice(-9), bufferId]); // Keep last 10 values
         
-        console.log(`FlappyBird Pitch: ${detectedPitch.toFixed(1)}Hz  [${minFreq.toFixed(1)}Hz-${maxFreq.toFixed(1)}Hz] threshold: ${threshold.toFixed(2)}`);
+        // COMMENTED OUT FOR PERFORMANCE
+        // console.log(`FlappyBird Pitch: ${detectedPitch.toFixed(1)}Hz  [${minFreq.toFixed(1)}Hz-${maxFreq.toFixed(1)}Hz] threshold: ${threshold.toFixed(2)}`);
         
         // Update bird flying state
         const currentTime = Date.now();
@@ -779,10 +782,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
               }
               
               if (isWithinThreshold) {
-                triggerVisualFeedback('correctPitch', 100);
+                // triggerVisualFeedback('correctPitch', 100);
                 // Create trail particles when singing correct pitch (reduced frequency for performance)
                 if (Math.random() < 0.15) { // 15% chance per frame (reduced from 30%)
-                  createParticles(bird.x + BIRD_SIZE/2, bird.y + BIRD_SIZE/2, 'trail', 1);
+                  // createParticles(bird.x + BIRD_SIZE/2, bird.y + BIRD_SIZE/2, 'trail', 1);
                 }
               }
             }
@@ -813,17 +816,17 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   // Handle game end callback - start death animation
   const handleGameEnd = useCallback(() => {
     // Create explosion particles at bird position
-    createParticles(bird.x + BIRD_SIZE/2, bird.y + BIRD_SIZE/2, 'explosion', 10);
+    // createParticles(bird.x + BIRD_SIZE/2, bird.y + BIRD_SIZE/2, 'explosion', 10);
     
     // Trigger screen shake
-    triggerScreenShake(15, 800);
+    // triggerScreenShake(15, 800);
     
     setGameState('dying')
     // Start death animation timer - bird will fall for 2 seconds then show game over
     deathAnimationTimer.current = setTimeout(() => {
       setGameState('gameOver')
     }, 2000)
-  }, [bird.x, bird.y, createParticles, triggerScreenShake])
+  }, [bird.x, bird.y /* createParticles, triggerScreenShake */])
   
   // Final game over (after death animation)
   const handleFinalGameOver = useCallback(() => {
@@ -978,8 +981,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             newScore++
             
             // Create spark particles when passing a pipe successfully (reduced count for performance)
-            createParticles(pipe.x + pipe.width/2, (pipe.topHeight + pipe.bottomY) / 2, 'spark', 3);
-            triggerVisualFeedback('glow', 150);
+            // createParticles(pipe.x + pipe.width/2, (pipe.topHeight + pipe.bottomY) / 2, 'spark', 3);
+            // triggerVisualFeedback('glow', 150);
             
             // Calculate accuracy for this note if we have samples
             if (currentPipeForAccuracy.current?.id === pipe.id && accuracySamples.current.length > 0) {
@@ -1000,9 +1003,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
               cycleComplete = true
               
               // Create celebration particles for cycle completion (reduced count for performance)
-              createParticles(bird.x + BIRD_SIZE/2, bird.y + BIRD_SIZE/2, 'celebration', 8);
-              triggerScreenShake(5, 300);
-              triggerVisualFeedback('pulse', 500);
+              // createParticles(bird.x + BIRD_SIZE/2, bird.y + BIRD_SIZE/2, 'celebration', 8);
+              // triggerScreenShake(5, 300);
+              // triggerVisualFeedback('pulse', 500);
               
               // Calculate overall accuracy for this cycle
               const startIndex = Math.max(0, noteAccuracies.length - noteSequence.length + 1)
@@ -1013,7 +1016,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
                 
                 // Log cycle completion
                 const cycleNumber = Math.floor(newScore / noteSequence.length)
-                console.log(`🎯 Cycle ${cycleNumber} completed! Overall accuracy: ${overallCycleAccuracy.toFixed(1)}%`)
+                // console.log(`🎯 Cycle ${cycleNumber} completed! Overall accuracy: ${overallCycleAccuracy.toFixed(1)}%`)
               }
             }
           }
@@ -1076,38 +1079,40 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       }
       
       // Update particles (optimized for performance)
-      setParticles(prev => {
-        const updatedParticles = []
-        for (let i = 0; i < prev.length; i++) {
-          const particle = prev[i]
-          if (particle.life > 1) { // Filter out dying particles immediately
-            updatedParticles.push({
-              ...particle,
-              x: particle.x + particle.vx,
-              y: particle.y + particle.vy,
-              life: particle.life - 1,
-              vx: particle.vx * 0.98, // Air resistance
-              vy: particle.vy + 0.2, // Gravity
-            })
-          }
-        }
-        return updatedParticles
-      })
+      // COMMENTED OUT FOR PERFORMANCE
+      // setParticles(prev => {
+      //   const updatedParticles = []
+      //   for (let i = 0; i < prev.length; i++) {
+      //     const particle = prev[i]
+      //     if (particle.life > 1) { // Filter out dying particles immediately
+      //       updatedParticles.push({
+      //         ...particle,
+      //         x: particle.x + particle.vx,
+      //         y: particle.y + particle.vy,
+      //         life: particle.life - 1,
+      //         vx: particle.vx * 0.98, // Air resistance
+      //         vy: particle.vy + 0.2, // Gravity
+      //       })
+      //     }
+      //   }
+      //   return updatedParticles
+      // })
       
       // Update screen shake
-      setScreenShake(prev => {
-        if (prev.duration <= 0) return { x: 0, y: 0, duration: 0, intensity: 0 };
-        
-        const progress = 1 - (prev.duration / SCREEN_SHAKE_DURATION);
-        const currentIntensity = prev.intensity * (1 - progress);
-        
-        return {
-          x: (Math.random() - 0.5) * currentIntensity,
-          y: (Math.random() - 0.5) * currentIntensity,
-          duration: prev.duration - 16, // ~60fps
-          intensity: prev.intensity
-        };
-      })
+      // COMMENTED OUT FOR PERFORMANCE
+      // setScreenShake(prev => {
+      //   if (prev.duration <= 0) return { x: 0, y: 0, duration: 0, intensity: 0 };
+      //
+      //   const progress = 1 - (prev.duration / SCREEN_SHAKE_DURATION);
+      //   const currentIntensity = prev.intensity * (1 - progress);
+      //
+      //   return {
+      //     x: (Math.random() - 0.5) * currentIntensity,
+      //     y: (Math.random() - 0.5) * currentIntensity,
+      //     duration: prev.duration - 16, // ~60fps
+      //     intensity: prev.intensity
+      //   };
+      // })
       
       gameLoopRef.current = requestAnimationFrame(gameLoop)
     }
@@ -1146,7 +1151,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         const birdCenterX = bird.x + BIRD_SIZE / 2
         const birdCenterY = bird.y + BIRD_SIZE / 2
         
-        console.log(`🎵 Checking harmonics - Bird position: (${birdCenterX.toFixed(1)}, ${birdCenterY.toFixed(1)}), Pipes: ${pipes.length}`)
+        // console.log(`🎵 Checking harmonics - Bird position: (${birdCenterX.toFixed(1)}, ${birdCenterY.toFixed(1)}), Pipes: ${pipes.length}`)
         
         pipes.forEach(pipe => {
           const pipeId = `pipe_${pipe.id}`
@@ -1166,7 +1171,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             distanceToRightEdge >= -HARMONIC_DISTANCE_THRESHOLD    // 100px after pipe
           )
           
-          console.log(`🎵 Pipe ${pipe.id} (${pipe.note.name}): Bird=${birdCenterX.toFixed(1)}, Pipe=[${pipeLeftEdge.toFixed(1)}-${pipeRightEdge.toFixed(1)}], InZone=${isInTriggerZone}`)
+          // console.log(`🎵 Pipe ${pipe.id} (${pipe.note.name}): Bird=${birdCenterX.toFixed(1)}, Pipe=[${pipeLeftEdge.toFixed(1)}-${pipeRightEdge.toFixed(1)}], InZone=${isInTriggerZone}`)
           
           // Check if bird is in the harmonic trigger zone (play regardless of user singing)
           if (isInTriggerZone) {
@@ -1174,7 +1179,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             if (!isPitchDetectedRef.current || pitch <= 0) {
               // User stopped singing - stop harmonics immediately
               if (lastHarmonicTimeRef.current[pipeId]) {
-                console.log(`🎵 STOPPING harmonics for pipe ${pipe.id} - user stopped singing`)
+                // console.log(`🎵 STOPPING harmonics for pipe ${pipe.id} - user stopped singing`)
                 delete lastHarmonicTimeRef.current[pipeId]
               }
               return // Don't play harmonics
@@ -1183,15 +1188,15 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             const lastPlayTime = lastHarmonicTimeRef.current[pipeId] || 0
             const timeSinceLastPlay = now - lastPlayTime
             
-            console.log(`🎵 In trigger zone with pitch detected! Pitch: ${pitch.toFixed(1)}Hz, Time since last play: ${timeSinceLastPlay}ms`)
+            // console.log(`🎵 In trigger zone with pitch detected! Pitch: ${pitch.toFixed(1)}Hz, Time since last play: ${timeSinceLastPlay}ms`)
             
             if (timeSinceLastPlay > 150) { // Reduced throttle for continuous play
-              console.log(`🎵🎸 PLAYING HARMONIC for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - in trigger zone with pitch`)
+              // console.log(`🎵🎸 PLAYING HARMONIC for pipe ${pipe.id}: ${pipe.note.name} (${pipe.note.frequency}Hz) - in trigger zone with pitch`)
               
               // Play harmonic with longer duration for continuous effect
               try {
                 playGuitarHarmonic(pipe.note.frequency, 300) // Longer duration for overlap
-                console.log(`🎵✅ Harmonic played successfully for ${pipe.note.name}`)
+                // console.log(`🎵✅ Harmonic played successfully for ${pipe.note.name}`)
               } catch (error) {
                 console.error('🎵❌ Error playing harmonic:', error)
               }
@@ -1201,7 +1206,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           } else {
             // Bird left the zone, reset timing for this pipe
             if (lastHarmonicTimeRef.current[pipeId]) {
-              console.log(`🎵 Stopping harmonics for pipe ${pipe.id} - bird left zone`)
+              // console.log(`🎵 Stopping harmonics for pipe ${pipe.id} - bird left zone`)
               delete lastHarmonicTimeRef.current[pipeId]
             }
           }
@@ -1215,7 +1220,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     checkHarmonics()
     
     // Set up interval to check every 50ms for more responsive harmonic triggering
-    harmonicCheckIntervalRef.current = setInterval(checkHarmonics, 50)
+    // COMMENTED OUT FOR PERFORMANCE - this was running every 50ms
+    // harmonicCheckIntervalRef.current = setInterval(checkHarmonics, 50)
     
     return () => {
       if (harmonicCheckIntervalRef.current) {
@@ -1276,9 +1282,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setRmsHistory([])
     setBufferIdHistory([])
     // Reset effects
-    setParticles([])
-    setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
-    setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
+    // setParticles([])
+    // setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
+    // setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
     setCurrentNoteProgress(0)
     setIsInTargetPipe(false)
     particleIdCounter.current = 0
@@ -1335,9 +1341,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     setRmsHistory([])
     setBufferIdHistory([])
     // Reset effects
-    setParticles([])
-    setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
-    setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
+    // setParticles([])
+    // setScreenShake({ x: 0, y: 0, duration: 0, intensity: 0 })
+    // setVisualFeedback({ glow: false, pulse: false, correctPitch: false })
     setCurrentNoteProgress(0)
     setIsInTargetPipe(false)
     particleIdCounter.current = 0
@@ -1362,7 +1368,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         {/* Transparent background so the scrolling background shows through */}
         
         {/* Particles */}
-        {particles.map(particle => (
+        {/* COMMENTED OUT FOR PERFORMANCE */}
+        {/* {particles.map(particle => (
           <Circle
             key={particle.id}
             cx={particle.x}
@@ -1370,7 +1377,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             r={particle.size * (particle.life / particle.maxLife)}
             color={`${particle.color}${Math.floor((particle.life / particle.maxLife) * 255).toString(16).padStart(2, '0')}`}
           />
-        ))}
+        ))} */}
         
         {/* Progress circle behind bird when in target pipe */}
         {pitch > 0 && isInTargetPipe && currentNoteProgress > 0 && (() => {
@@ -1439,7 +1446,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
             <Circle
               cx={pipe.x + pipe.width / 2}
               cy={(pipe.topHeight + pipe.bottomY) / 2}
-              r={pipe.circleRadius + (visualFeedback.pulse ? 5 : 0)}
+              r={pipe.circleRadius /* + (visualFeedback.pulse ? 5 : 0) */}
               color="rgba(0, 0, 0, 0.9)"
             />
             {/* Note label text in the gap */}
@@ -1454,7 +1461,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         ))}
       </Canvas>
     )
-  }, [gameState, width, height, pipes, bird, particles, screenShake, visualFeedback])
+  }, [gameState, width, height, pipes, bird /* particles, screenShake, visualFeedback */])
   
   // Show loading screen during initialization
   if (isInitializing) {
@@ -1524,8 +1531,8 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   return (
     <View style={[styles.container, {
       transform: [
-        { translateX: screenShake.x },
-        { translateY: screenShake.y }
+        { translateX: 0 /* screenShake.x */ },
+        { translateY: 0 /* screenShake.y */ }
       ]
     }]}>
       {/* Scrolling Background */}
