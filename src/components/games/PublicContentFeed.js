@@ -298,13 +298,14 @@ export const PublicContentFeed = ({ navigation }) => {
                 marginTop: responsiveHeight(Platform.OS === 'android' ? -5 : -3),
                 marginBottom: responsiveHeight(Platform.OS === 'android' ? 0 : -10),
               }}>
-              <GamePreview 
-                musicVideoReel={item} 
+              <GamePreview
+                musicVideoReel={item}
                 navigation={navigation}
                 itemHeight={itemHeight}
                 showFollowButton={true}
                 isScreenFocused={isScreenFocused}
                 isCurrentItem={index === currentIndex}
+                hideDeleteOption={true}
               />
             </View>
           )}

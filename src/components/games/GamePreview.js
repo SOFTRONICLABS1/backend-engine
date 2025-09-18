@@ -34,7 +34,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 const { height: screenHeight } = Dimensions.get('window');
 
 
-export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = true, isScreenFocused = true, isCurrentItem = true }) => {
+export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = true, isScreenFocused = true, isCurrentItem = true, hideDeleteOption = false }) => {
   const { theme } = useTheme();
   const safeAreaInsets = useSafeAreaInsets();
   const responsiveValues = useResponsiveValues(safeAreaInsets);
@@ -637,7 +637,7 @@ export const GamePreview = ({ musicVideoReel, navigation, showFollowButton = tru
 
 
         {/* 3-dots menu for own content - Top Right */}
-        {isOwnContent && (
+        {isOwnContent && !hideDeleteOption && (
           <View style={styles.topRightOptionsContainer}>
             <TouchableOpacity 
               style={styles.topOptionsButton} 
