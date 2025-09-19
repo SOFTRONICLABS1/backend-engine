@@ -258,6 +258,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
   // const noteCompletionAnim = useRef(new Animated.Value(0)).current
   // const toleranceGlowAnim = useRef(new Animated.Value(0)).current
   const [recentlyCompletedNote, setRecentlyCompletedNote] = useState<string | null>(null)
+
   
   
   // Falling sparkles when voice is in range
@@ -557,6 +558,10 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
   }, [])
 
   const playGuitarHarmonic = useCallback((pitchOrFreq: string | number, duration = 300) => {
+    // HARMONICS COMPLETELY DISABLED FOR PERFORMANCE
+    return
+
+    /*
     let freq: number
     if (typeof pitchOrFreq === 'number') freq = pitchOrFreq
     else freq = NOTE_FREQUENCIES_MAP[pitchOrFreq] || parseFloat(pitchOrFreq) || 440
@@ -576,13 +581,16 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
       const dataUri = generateToneWavDataUri(freq, duration)
       playDataUriWithExpo(dataUri)
     } catch (e) { console.warn('Harmonic playback failed', e) }
+    */
   }, [playDataUriWithExpo])
 
   // center-line checker for segments — play harmonic if center lies inside a segment (score now tracked separately)
+  // COMPLETELY DISABLED FOR PERFORMANCE - HARMONIC SYSTEM CAUSING LAG
+  /*
   useEffect(() => {
     if (!isRecording || isPaused || !targetSegments.length) return
     let rafId = 0
-    
+
     const loop = () => {
       const now = Date.now()
       const centerX = graphWidth / 2
@@ -604,6 +612,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     rafId = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(rafId)
   }, [isRecording, isPaused, targetSegments, graphWidth, playGuitarHarmonic])
+  */
 
   // Simple microphone status logging
   useEffect(() => {
@@ -1433,6 +1442,7 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
           <Ionicons name={isRecording ? "stop" : "play"} size={32} color="#fff" />
         </TouchableOpacity>
       )}
+
     </View>
   )
 }
