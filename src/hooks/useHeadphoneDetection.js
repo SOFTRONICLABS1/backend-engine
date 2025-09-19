@@ -101,8 +101,8 @@ const useHeadphoneDetection = () => {
     // Initial check
     checkHeadphoneConnection();
 
-    // Set up polling for changes (every 2 seconds)
-    interval = setInterval(checkHeadphoneConnection, 2000);
+    // Set up polling for changes (every 5 seconds - reduced frequency to save battery)
+    interval = setInterval(checkHeadphoneConnection, 5000);
 
     // Cleanup
     return () => {

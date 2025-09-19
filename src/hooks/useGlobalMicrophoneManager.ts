@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { Alert, Platform } from 'react-native';
+import { Alert, Platform, AppState } from 'react-native';
 import { AudioModule } from 'expo-audio';
 import MicrophoneStreamModule, { AudioBuffer } from '../../modules/microphone-stream';
 import DSPModule from '../../specs/NativeDSPModule';
@@ -25,6 +25,14 @@ const MAX_FREQ = audioConfig.maxFrequency;
 const THRESHOLD_DEFAULT = audioConfig.pitchDetectionThreshold;
 const INITIAL_SAMPLE_RATE = getOptimizedSampleRate();
 
+// Memory management constants
+const MAX_BUFFER_SIZE = 8192; // Maximum buffer size to prevent OOM
+const MEMORY_CHECK_INTERVAL = 10000; // Check memory every 10 seconds
+const MAX_PROCESSING_QUEUE = 3; // Maximum concurrent processing tasks
+
+let processingTaskCount = 0;
+let lastMemoryCheck = 0;
+
 // Global state for the microphone manager
 let globalMicrophoneState = {
   permissionStatus: 'pending' as MicrophonePermissionStatus,
@@ -34,7 +42,7 @@ let globalMicrophoneState = {
   pitchData: {
     pitch: -1,
     rms: 0,
-    audioBuffer: new Array(BUF_SIZE).fill(0),
+    audioBuffer: new Array(Math.min(BUF_SIZE, MAX_BUFFER_SIZE)).fill(0),
     bufferId: 0,
     sampleRate: INITIAL_SAMPLE_RATE,
     timestamp: 0,
@@ -47,6 +55,26 @@ let microphoneSubscription: any = null;
 let isInitialized = false;
 let initializationPromise: Promise<void> | null = null;
 let healthCheckInterval: NodeJS.Timeout | null = null;
+let appStateSubscription: any = null;
+let isAppInBackground = false;
+
+// Listen for app state changes to optimize performance
+const handleAppStateChange = (nextAppState: string) => {
+  const wasInBackground = isAppInBackground;
+  isAppInBackground = nextAppState === 'background' || nextAppState === 'inactive';
+
+  if (isAppInBackground && !wasInBackground) {
+    console.log('🎤 App backgrounded - reducing microphone processing');
+  } else if (!isAppInBackground && wasInBackground) {
+    console.log('🎤 App foregrounded - resuming normal processing');
+  }
+};
+
+// Initialize app state listener
+if (!appStateSubscription) {
+  appStateSubscription = AppState.addEventListener('change', handleAppStateChange);
+  isAppInBackground = AppState.currentState === 'background' || AppState.currentState === 'inactive';
+}
 
 // Global functions for managing microphone
 export const requestMicrophonePermission = async (retryCount = 0): Promise<MicrophonePermissionStatus> => {
@@ -205,42 +233,92 @@ const startMicrophoneStream = async (retryCount = 0) => {
 
       bufferIdCounter++;
 
-      // Throttle processing on Android to improve performance
+      // Enhanced throttling for all platforms and app state
       const now = Date.now();
-      if (Platform.OS === 'android' && (now - lastProcessTime) < processThrottle) {
+      const baseThrottle = Platform.OS === 'android' ? 30 : 20;
+      const throttleMs = isAppInBackground ? baseThrottle * 3 : baseThrottle; // 3x slower when backgrounded
+      if ((now - lastProcessTime) < throttleMs) {
         return;
       }
       lastProcessTime = now;
 
-      // Update audio buffer with overlap
+      // Skip heavy processing when app is backgrounded
+      if (isAppInBackground) {
+        // Only update basic data without complex processing
+        globalMicrophoneState.pitchData = {
+          ...globalMicrophoneState.pitchData,
+          bufferId: bufferIdCounter,
+          timestamp: now,
+        };
+        return;
+      }
+
+      // Update audio buffer with overlap and memory management
       const len = Math.min(buffer.samples.length, BUF_SIZE - OVERLAP_SIZE);
+
+      // Prevent memory accumulation by limiting buffer size
+      if (audioBuffer.length > BUF_SIZE * 2) {
+        console.warn('🎤 Audio buffer too large, resetting to prevent memory leak');
+        audioBuffer = new Array(BUF_SIZE).fill(0);
+      }
+
       audioBuffer = audioBuffer.slice(len);
       audioBuffer.push(...buffer.samples.slice(0, len));
 
-      // Process audio data asynchronously
+      // Ensure buffer doesn't exceed maximum size
+      if (audioBuffer.length > BUF_SIZE) {
+        audioBuffer = audioBuffer.slice(-BUF_SIZE);
+      }
+
+      // Process audio data asynchronously with memory management and queue control
       (async () => {
+        // Skip processing if too many tasks are already running to prevent OOM
+        if (processingTaskCount >= MAX_PROCESSING_QUEUE) {
+          console.warn('🎤 Too many processing tasks, skipping to prevent memory issues');
+          return;
+        }
+
+        processingTaskCount++;
+
         try {
-          // Calculate RMS
-          const rms = await DSPModule.rms(buffer.samples);
-          // Add null check for Android compatibility
-          const validRms = (rms !== null && rms !== undefined && !isNaN(rms)) ? rms : 0;
+          // Limit buffer size for DSP processing to prevent OOM
+          const processBuffer = buffer.samples.length > 4096 ? buffer.samples.slice(0, 4096) : buffer.samples;
+
+          // Calculate RMS with error handling
+          let validRms = 0;
+          try {
+            const rms = await DSPModule.rms(processBuffer);
+            validRms = (rms !== null && rms !== undefined && !isNaN(rms)) ? rms : 0;
+          } catch (rmsError) {
+            console.warn('🎤 RMS calculation failed:', rmsError);
+            validRms = 0;
+          }
+
           rmsQueue.push(validRms);
-          if (rmsQueue.length > 10) rmsQueue.shift(); // Keep last 10 RMS values
-          
-          // Pitch detection
-          const detectedPitch = await DSPModule.pitch(
-            audioBuffer, 
-            globalMicrophoneState.sampleRate, 
-            MIN_FREQ, 
-            MAX_FREQ, 
-            THRESHOLD_DEFAULT
-          );
-          
-          // Update global pitch data
+          if (rmsQueue.length > 5) rmsQueue.shift(); // Reduced queue size for memory
+
+          // Pitch detection with memory-safe buffer
+          let detectedPitch = -1;
+          try {
+            // Use smaller buffer for pitch detection to prevent OOM
+            const pitchBuffer = audioBuffer.length > 3072 ? audioBuffer.slice(-3072) : audioBuffer;
+            detectedPitch = await DSPModule.pitch(
+              pitchBuffer,
+              globalMicrophoneState.sampleRate,
+              MIN_FREQ,
+              MAX_FREQ,
+              THRESHOLD_DEFAULT
+            );
+          } catch (pitchError) {
+            console.warn('🎤 Pitch detection failed:', pitchError);
+            detectedPitch = -1;
+          }
+
+          // Update global pitch data with memory-safe copy
           globalMicrophoneState.pitchData = {
             pitch: detectedPitch,
             rms: rmsQueue[rmsQueue.length - 1] || 0,
-            audioBuffer: [...audioBuffer],
+            audioBuffer: audioBuffer.slice(), // Shallow copy to prevent reference issues
             bufferId: bufferIdCounter,
             sampleRate: globalMicrophoneState.sampleRate,
             timestamp: Date.now(),
@@ -249,7 +327,11 @@ const startMicrophoneStream = async (retryCount = 0) => {
           // Notify all listeners
           notifyPitchListeners();
         } catch (error) {
-          console.error('Error processing audio data:', error);
+          console.error('🎤 Critical error in audio processing:', error);
+          // Reset audio buffer on critical error to prevent cascading issues
+          audioBuffer = new Array(Math.min(BUF_SIZE, MAX_BUFFER_SIZE)).fill(0);
+        } finally {
+          processingTaskCount--;
         }
       })();
     });
@@ -325,20 +407,25 @@ const stopMicrophoneStream = async () => {
 
   try {
     globalMicrophoneState.isStreaming = false;
-    
+
     // Stop health monitoring
     if (healthCheckInterval) {
       clearInterval(healthCheckInterval);
       healthCheckInterval = null;
     }
-    
+
     if (microphoneSubscription) {
       microphoneSubscription.remove();
       microphoneSubscription = null;
     }
 
     MicrophoneStreamModule.stopRecording();
-    console.log('🎤 Microphone stream stopped');
+
+    // Emergency memory cleanup
+    processingTaskCount = 0;
+    globalMicrophoneState.pitchData.audioBuffer = [];
+
+    console.log('🎤 Microphone stream stopped with memory cleanup');
   } catch (error) {
     console.error('Error stopping microphone stream:', error);
   }
@@ -354,26 +441,60 @@ const startHealthCheck = () => {
   let staleDataCount = 0;
   
   healthCheckInterval = setInterval(async () => {
-    if (!globalMicrophoneState.isStreaming) return;
-    
+    if (!globalMicrophoneState.isStreaming) {
+      // Stop health check if not streaming to save resources
+      if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+      }
+      return;
+    }
+
     const currentBufferId = globalMicrophoneState.pitchData.bufferId;
     const now = Date.now();
     const lastTimestamp = globalMicrophoneState.pitchData.timestamp;
-    
+
+    // Memory monitoring and cleanup
+    if (now - lastMemoryCheck > MEMORY_CHECK_INTERVAL) {
+      lastMemoryCheck = now;
+
+      // Check buffer sizes and cleanup if needed
+      const bufferSize = globalMicrophoneState.pitchData.audioBuffer.length;
+      if (bufferSize > MAX_BUFFER_SIZE) {
+        console.warn(`🎤 Memory cleanup: Buffer size ${bufferSize} exceeds maximum, trimming`);
+        globalMicrophoneState.pitchData.audioBuffer = globalMicrophoneState.pitchData.audioBuffer.slice(-MAX_BUFFER_SIZE);
+      }
+
+      // Check processing queue
+      if (processingTaskCount > 0) {
+        console.log(`🎤 Memory monitor: ${processingTaskCount} processing tasks active`);
+      }
+
+      // Force garbage collection if available (Android)
+      if (Platform.OS === 'android' && global.gc) {
+        try {
+          global.gc();
+          console.log('🎤 Memory cleanup: Forced garbage collection');
+        } catch (e) {
+          // Ignore GC errors
+        }
+      }
+    }
+
     // Check if we're getting fresh data
-    const isDataStale = (now - lastTimestamp) > 3000; // 3 seconds
+    const isDataStale = (now - lastTimestamp) > 5000; // Increased to 5 seconds to reduce checks
     const isBufferStuck = currentBufferId === lastBufferId;
-    
+
     if (isDataStale || isBufferStuck) {
       staleDataCount++;
       console.warn(`🎤 Health check: Stale data detected (count: ${staleDataCount})`);
-      
+
       // If data has been stale for too long, restart the stream
-      if (staleDataCount >= 3) {
+      if (staleDataCount >= 2) { // Reduced attempts to restart faster
         console.warn('🎤 Health check: Restarting microphone stream due to stale data');
         try {
           await stopMicrophoneStream();
-          await new Promise(resolve => setTimeout(resolve, 500));
+          await new Promise(resolve => setTimeout(resolve, 300)); // Reduced delay
           await startMicrophoneStream();
           staleDataCount = 0;
         } catch (error) {
@@ -383,9 +504,9 @@ const startHealthCheck = () => {
     } else {
       staleDataCount = 0; // Reset counter if data is fresh
     }
-    
+
     lastBufferId = currentBufferId;
-  }, 2000); // Check every 2 seconds
+  }, 4000); // Reduced frequency: Check every 4 seconds instead of 2
 };
 
 const notifyPitchListeners = () => {

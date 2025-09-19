@@ -578,13 +578,22 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     } catch (e) { console.warn('Harmonic playback failed', e) }
   }, [playDataUriWithExpo])
 
-  // center-line checker for segments — play harmonic if center lies inside a segment (score now tracked separately)
+  // center-line checker for segments with throttling for performance
   useEffect(() => {
     if (!isRecording || isPaused || !targetSegments.length) return
     let rafId = 0
-    
+    let lastCheckTime = 0
+
     const loop = () => {
       const now = Date.now()
+
+      // Throttle center-line checks to ~20 FPS for better performance
+      if (now - lastCheckTime < 50) {
+        rafId = requestAnimationFrame(loop)
+        return
+      }
+      lastCheckTime = now
+
       const centerX = graphWidth / 2
       for (let i = 0; i < targetSegments.length; i++) {
         const seg = targetSegments[i]
@@ -612,9 +621,18 @@ export const TuneTrackerGame = ({ notes }: TuneTrackerGameProps) => {
     }
   }, [isRecording, micAccess, isActive])
 
-  // viewport animation RAF
+  // viewport animation RAF with throttling for performance
+  const lastAnimationTime = useRef(0)
   const animate = useCallback(() => {
     if (isRecording && !isPaused && gameState === 'playing') {
+      const now = Date.now()
+      // Throttle animation to ~30 FPS instead of 60 FPS for better performance
+      if (now - lastAnimationTime.current < 33) {
+        animationFrameRef.current = requestAnimationFrame(animate)
+        return
+      }
+      lastAnimationTime.current = now
+
       setViewportCenterFreq(current => {
         const diff = targetCenterFreq - current
         if (Math.abs(diff) < 0.1) return targetCenterFreq
