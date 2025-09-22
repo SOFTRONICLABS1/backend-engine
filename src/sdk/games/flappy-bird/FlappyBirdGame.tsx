@@ -381,35 +381,41 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   const [currentNoteIndex, setCurrentNoteIndex] = useState(0)
   
   // Initialize harmonics and handle loading state
+  // HARMONICS DISABLED FOR PERFORMANCE
   useEffect(() => {
     // Initialize GuitarHarmonics
+    // COMMENTED OUT - CAUSING LAG
+    /*
     try {
       guitarHarmonicsRef.current = new GuitarHarmonics()
     } catch (error) {
       console.warn('GuitarHarmonics initialization failed:', error)
       guitarHarmonicsRef.current = null
     }
-    
+    */
+
     // Set loading to false after a short delay to allow microphone to initialize
     const timer = setTimeout(() => {
       setIsInitializing(false)
     }, 1000)
-    
+
     return () => {
       clearTimeout(timer)
-      
+
       // Cleanup harmonic checker interval
       if (harmonicCheckIntervalRef.current) {
         clearInterval(harmonicCheckIntervalRef.current)
         harmonicCheckIntervalRef.current = null
       }
-      
+
       // Cleanup harmonics on unmount
+      /*
       try {
         guitarHarmonicsRef.current?.stopAll?.()
       } catch (error) {
         console.warn('Error stopping harmonics:', error)
       }
+      */
     }
   }, [])
 
@@ -454,7 +460,12 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
     }
   }, [])
 
+  // HARMONICS PLAYBACK COMPLETELY DISABLED FOR PERFORMANCE
   const playGuitarHarmonic = useCallback(async (pitchOrFreq: string | number, duration = 300) => {
+    // EARLY RETURN - NO HARMONIC PROCESSING
+    return
+
+    /*
     let freq: number
     if (typeof pitchOrFreq === 'number') freq = pitchOrFreq
     else freq = NOTE_FREQUENCIES[pitchOrFreq as keyof typeof NOTE_FREQUENCIES] || parseFloat(pitchOrFreq) || 440
@@ -466,9 +477,9 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
           const d = Math.abs((f as number) - freq)
           if (d < md) { md = d; nearest = n }
         }
-        try { 
+        try {
           guitarHarmonicsRef.current.playNote(nearest, duration)
-          return 
+          return
         } catch {}
       }
     } catch {}
@@ -480,13 +491,14 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
         try {
           const dataUri = generateToneWavDataUri(freq, duration)
           playDataUriWithExpo(dataUri)
-        } catch (e) { 
-          console.warn('WAV generation failed', e) 
+        } catch (e) {
+          console.warn('WAV generation failed', e)
         }
       }, 0)
-    } catch (e) { 
-      console.warn('Harmonic playback failed', e) 
+    } catch (e) {
+      console.warn('Harmonic playback failed', e)
     }
+    */
   }, [playDataUriWithExpo])
   
   // Convert frequency to Y position on screen (LINEAR mapping for consistent visual gaps)
@@ -1127,8 +1139,10 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
   }, [gameState, bird, score, createPipe, bpm, height, difficulty, noteSequence.length, frequencyToY, handleGameEnd, pitch, width, handleFinalGameOver])
   
   // Harmonic proximity checker (optimized to avoid blocking main thread)
+  // COMPLETELY DISABLED FOR PERFORMANCE - THIS WAS CAUSING MAJOR LAG
   const harmonicCheckIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  
+
+  /*
   useEffect(() => {
     console.log('🎵 Harmonic checker effect triggered, gameState:', gameState)
     
@@ -1230,6 +1244,7 @@ export const FlappyBirdGame: React.FC<FlappyBirdGameProps> = ({ notes }) => {
       }
     }
   }, [gameState, bird, pipes, playGuitarHarmonic]) // Include dependencies to ensure we have latest values
+  */
   
   // Start game with settings from menu (or restart with current settings)
   const startGame = useCallback((selectedDifficulty?: Difficulty, selectedBpm?: BPM) => {
